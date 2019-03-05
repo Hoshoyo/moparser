@@ -1,6 +1,8 @@
 #include "lexer.h"
 #include <string.h>
 
+// https://docs.microsoft.com/en-us/cpp/c-language/c-floating-point-constants?view=vs-2017
+
 static bool
 is_letter(char c) {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
@@ -124,7 +126,7 @@ token_number(u8* at, s32 line, s32 column) {
 
     if(floating) {
         // e suffix
-        if(*at == 'e') {
+        if(*at == 'e' || *at == 'E') {
             ++at;
             if(*at == '-' || *at == '+') {
                 ++at;
@@ -288,6 +290,9 @@ token_next(Lexer* lexer) {
             if(*at == '=') {
                 r.type = TOKEN_PLUS_EQUAL;
                 ++at;
+            } else if(*at == '+') {
+                r.type = TOKEN_PLUS_PLUS;
+                ++at;
             } else {
                 r.type = '+';
             }
@@ -297,6 +302,9 @@ token_next(Lexer* lexer) {
             ++at;
             if(*at == '=') {
                 r.type = TOKEN_MINUS_EQUAL;
+                ++at;
+            } else if(*at == '-') {
+                r.type = TOKEN_MINUS_MINUS;
                 ++at;
             } else if(*at == '>') {
                 r.type = TOKEN_ARROW;
@@ -367,7 +375,6 @@ token_next(Lexer* lexer) {
                     case '\\':
                     case '\'':
                     case '"':
-                        1;
                     case '?':
                         at++;
                         break;
@@ -476,6 +483,13 @@ token_next(Lexer* lexer) {
                         ++at;
                     }
                     r.type = TOKEN_INT_OCT_LITERAL;
+                } else if(*at == '0' && at[1] == 'b') {
+                    // binary
+                    at += 2;
+                    while(*at && (*at == '1' || *at == '0')) {
+                        ++at;
+                    }
+                    r.type = TOKEN_INT_BIN_LITERAL;
 				} else {
 					r = token_number(at, lexer->line, lexer->column);
                     break;
