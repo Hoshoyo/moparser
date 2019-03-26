@@ -1,5 +1,6 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
-#include "lexer.h"
+#include "parser.h"
 
 typedef struct {
     u8* data;
@@ -27,9 +28,11 @@ File_Info load_file(const char* filename) {
 }
 
 int main(int argc, char** argv) {
-    File_Info finfo = load_file("lexer.c");
+    File_Info finfo = load_file("test/test.h");
 
     Lexer lexer = {0};
-    lexer_cstr(&lexer, finfo.data, finfo.size_bytes, 0);
+    Token* tokens = lexer_cstr(&lexer, finfo.data, finfo.size_bytes, 0);
+	Parser_Result res = parse_expression(&lexer);
+	parser_print_ast(stdout, res.node);
     return 0;
 }

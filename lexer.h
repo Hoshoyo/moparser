@@ -109,5 +109,10 @@ typedef struct {
 
 Token* lexer_file(Lexer* lexer, const char* filename, u32 flags);
 Token* lexer_cstr(Lexer* lexer, char* str, s32 length, u32 flags);
+Token* lexer_next(Lexer* lexer);
+Token* lexer_peek(Lexer* lexer);
 
 void   lexer_free(Lexer* lexer);
+
+const char* token_to_str(Token* token);
+const char* token_type_to_str(Token_Type token_type);

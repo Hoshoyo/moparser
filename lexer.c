@@ -1,4 +1,5 @@
 #include "lexer.h"
+#include "light_array.h"
 #include <string.h>
 
 // https://docs.microsoft.com/en-us/cpp/c-language/c-floating-point-constants?view=vs-2017
@@ -356,6 +357,7 @@ token_next(Lexer* lexer) {
         }break;
 
         case '\'': {
+			// TODO(psv): Implement Long suffix  L' c-char-sequence '
             r.type = TOKEN_CHAR_LITERAL;
             at++;
             if (*at == '\'') {
@@ -588,14 +590,125 @@ Token*
 lexer_cstr(Lexer* lexer, char* str, s32 length, u32 flags) {
     lexer->stream = str;
 
+	Token* tokens = array_new(Token);
+
     while(true) {
         lexer_eat_whitespace(lexer);
         Token t = token_next(lexer);
 
         if(t.type == TOKEN_EOF) break;
 
+        // token_print(t);
+
         // push token
-        token_print(t);
+		array_push(tokens, t);
     }
-    return 0;
+
+	lexer->tokens = tokens;
+	lexer->index = 0;
+
+    return tokens;
+}
+
+Token* 
+lexer_next(Lexer* lexer) {
+	return &lexer->tokens[lexer->index++];
+}
+
+Token*
+lexer_peek(Lexer* lexer) {
+	return &lexer->tokens[lexer->index];
+}
+
+const char* 
+token_to_str(Token* token) {
+	return token_type_to_str(token->type);
+}
+
+const char* 
+token_type_to_str(Token_Type token_type) {
+	switch (token_type) {
+		TOKEN_EOF: return "end of stream";
+		TOKEN_IDENTIFIER: return "identifier";
+		TOKEN_CHAR_LITERAL: return "character literal";
+
+		TOKEN_STRING_LITERAL: return "string literal";
+		TOKEN_INT_HEX_LITERAL: return "hexadecimal literal";
+		TOKEN_INT_BIN_LITERAL: return "binary literal";
+		TOKEN_INT_OCT_LITERAL: return "octal literal";
+		TOKEN_INT_U_LITERAL: return "unsigned integer literal";
+		TOKEN_INT_UL_LITERAL: return "unsigned long integer literal";
+		TOKEN_INT_ULL_LITERAL: return "unsgined long long integer literal";
+		TOKEN_INT_LITERAL: return "integer literal";
+		TOKEN_INT_L_LITERAL: return "long integer literal";
+		TOKEN_INT_LL_LITERAL: return "long long integer literal";
+		TOKEN_FLOAT_LITERAL: return "float literal";
+		TOKEN_DOUBLE_LITERAL: return "double literal";
+		TOKEN_LONG_DOUBLE_LITERAL: return "long double literal";
+
+		TOKEN_ARROW: return "->";
+		TOKEN_EQUAL_EQUAL: return "==";
+		TOKEN_LESS_EQUAL: return "<=";
+		TOKEN_GREATER_EQUAL: return ">=";
+		TOKEN_LOGIC_NOT_EQUAL: return "!=";
+		TOKEN_LOGIC_OR: return "||";
+		TOKEN_LOGIC_AND: return "&&";
+		TOKEN_BITSHIFT_LEFT: return "<<";
+		TOKEN_BITSHIFT_RIGHT: return ">>";
+
+		TOKEN_PLUS_EQUAL: return "+=";
+		TOKEN_MINUS_EQUAL: return "-=";
+		TOKEN_TIMES_EQUAL: return "*=";
+		TOKEN_DIV_EQUAL: return "/=";
+		TOKEN_MOD_EQUAL: return "%=";
+		TOKEN_AND_EQUAL: return "&=";
+		TOKEN_OR_EQUAL: return "|=";
+		TOKEN_XOR_EQUAL: return "^=";
+		TOKEN_SHL_EQUAL: return "<<=";
+		TOKEN_SHR_EQUAL: return ">>=";
+		TOKEN_NOT_EQUAL: return "!=";
+
+		TOKEN_PLUS_PLUS: return "++";
+		TOKEN_MINUS_MINUS: return "--";
+
+			// Type keywords
+		TOKEN_KEYWORD_INT: return "int";
+		TOKEN_KEYWORD_FLOAT: return "float";
+		TOKEN_KEYWORD_DOUBLE: return "double";
+		TOKEN_KEYWORD_LONG: return "long";
+		TOKEN_KEYWORD_VOID: return "void";
+		TOKEN_KEYWORD_CHAR: return "char";
+		TOKEN_KEYWORD_SHORT: return "short";
+		TOKEN_KEYWORD_SIGNED: return "signed";
+		TOKEN_KEYWORD_UNSIGNED: return "unsigned";
+
+			// Keywords
+		TOKEN_KEYWORD_AUTO: return "auto";
+		TOKEN_KEYWORD_BREAK: return "break";
+		TOKEN_KEYWORD_CASE: return "case";
+		TOKEN_KEYWORD_CONST: return "const";
+		TOKEN_KEYWORD_CONTINUE: return "continue";
+		TOKEN_KEYWORD_DEFAULT: return "default";
+		TOKEN_KEYWORD_DO: return "do";
+		TOKEN_KEYWORD_ELSE: return "else";
+		TOKEN_KEYWORD_ENUM: return "enum";
+		TOKEN_KEYWORD_EXTERN: return "extern";
+		TOKEN_KEYWORD_FOR: return "for";
+		TOKEN_KEYWORD_GOTO: return "goto";
+		TOKEN_KEYWORD_IF: return "if";
+		TOKEN_KEYWORD_INLINE: return "inline";
+		TOKEN_KEYWORD_REGISTER: return "register";
+		TOKEN_KEYWORD_RESTRICT: return "restrict";
+		TOKEN_KEYWORD_RETURN: return "return";
+		TOKEN_KEYWORD_SIZEOF: return "sizeof";
+		TOKEN_KEYWORD_STATIC: return "static";
+		TOKEN_KEYWORD_STRUCT: return "struct";
+		TOKEN_KEYWORD_SWITCH: return "switch";
+		TOKEN_KEYWORD_TYPEDEF: return "typedef";
+		TOKEN_KEYWORD_UNION: return "union";
+		TOKEN_KEYWORD_VOLATILE: return "volatile";
+		TOKEN_KEYWORD_WHILE: return "while";
+	}
+
+	return "unknown";
 }
