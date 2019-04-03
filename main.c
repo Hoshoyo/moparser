@@ -28,11 +28,17 @@ File_Info load_file(const char* filename) {
 }
 
 int main(int argc, char** argv) {
-    File_Info finfo = load_file("test/test.h");
+    File_Info finfo= {0};
+    if(argc < 2) {
+        finfo = load_file("./moparser/test/test.h");
+    } else {
+        finfo = load_file(argv[1]);
+    }
 
     Lexer lexer = {0};
     Token* tokens = lexer_cstr(&lexer, finfo.data, finfo.size_bytes, 0);
 	Parser_Result res = parse_expression(&lexer);
 	parser_print_ast(stdout, res.node);
+
     return 0;
 }

@@ -260,6 +260,7 @@ token_next(Lexer* lexer) {
                 ++at;
             } else {
                 r.type = '=';
+                r.flags |= TOKEN_FLAG_ASSIGNMENT_OPERATOR;
             }
             r.length = at - r.data;
         }break;
@@ -267,6 +268,7 @@ token_next(Lexer* lexer) {
             ++at;
             if(*at == '=') {
                 r.type = TOKEN_DIV_EQUAL;
+                r.flags |= TOKEN_FLAG_ASSIGNMENT_OPERATOR;
                 ++at;
             } else {
                 r.type = '/';
@@ -277,6 +279,7 @@ token_next(Lexer* lexer) {
             ++at;
             if(*at == '=') {
                 r.type = TOKEN_AND_EQUAL;
+                r.flags |= TOKEN_FLAG_ASSIGNMENT_OPERATOR;
                 ++at;
             } else if(*at == '&') {
                 r.type = TOKEN_LOGIC_AND;
@@ -290,6 +293,7 @@ token_next(Lexer* lexer) {
             ++at;
             if(*at == '=') {
                 r.type = TOKEN_PLUS_EQUAL;
+                r.flags |= TOKEN_FLAG_ASSIGNMENT_OPERATOR;
                 ++at;
             } else if(*at == '+') {
                 r.type = TOKEN_PLUS_PLUS;
@@ -303,6 +307,7 @@ token_next(Lexer* lexer) {
             ++at;
             if(*at == '=') {
                 r.type = TOKEN_MINUS_EQUAL;
+                r.flags |= TOKEN_FLAG_ASSIGNMENT_OPERATOR;
                 ++at;
             } else if(*at == '-') {
                 r.type = TOKEN_MINUS_MINUS;
@@ -319,6 +324,7 @@ token_next(Lexer* lexer) {
             ++at;
             if(*at == '=') {
                 r.type = TOKEN_NOT_EQUAL;
+                r.flags |= TOKEN_FLAG_ASSIGNMENT_OPERATOR;
                 ++at;
             } else {
                 r.type = '~';
@@ -329,6 +335,7 @@ token_next(Lexer* lexer) {
             ++at;
             if(*at == '=') {
                 r.type = TOKEN_MOD_EQUAL;
+                r.flags |= TOKEN_FLAG_ASSIGNMENT_OPERATOR;
                 ++at;
             } else {
                 r.type = '%';
@@ -339,6 +346,7 @@ token_next(Lexer* lexer) {
             ++at;
             if(*at == '=') {
                 r.type = TOKEN_TIMES_EQUAL;
+                r.flags |= TOKEN_FLAG_ASSIGNMENT_OPERATOR;
                 ++at;
             } else {
                 r.type = '*';
@@ -349,6 +357,7 @@ token_next(Lexer* lexer) {
             ++at;
             if(*at == '=') {
                 r.type = TOKEN_XOR_EQUAL;
+                r.flags |= TOKEN_FLAG_ASSIGNMENT_OPERATOR;
                 ++at;
             } else {
                 r.type = '^';
@@ -618,6 +627,11 @@ lexer_next(Lexer* lexer) {
 Token*
 lexer_peek(Lexer* lexer) {
 	return &lexer->tokens[lexer->index];
+}
+
+Token*
+lexer_peek_n(Lexer* lexer, s32 n) {
+    return &lexer->tokens[lexer->index + n];
 }
 
 const char* 

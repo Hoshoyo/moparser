@@ -87,6 +87,7 @@ typedef enum {
 typedef enum {
     TOKEN_FLAG_KEYWORD = FLAG(0),
     TOKEN_FLAG_TYPE_KEYWORD = FLAG(1),
+    TOKEN_FLAG_ASSIGNMENT_OPERATOR = FLAG(2),
 } Token_Flags;
 
 typedef struct {
@@ -111,6 +112,7 @@ Token* lexer_file(Lexer* lexer, const char* filename, u32 flags);
 Token* lexer_cstr(Lexer* lexer, char* str, s32 length, u32 flags);
 Token* lexer_next(Lexer* lexer);
 Token* lexer_peek(Lexer* lexer);
+Token* lexer_peek_n(Lexer* lexer, s32 n);
 
 void   lexer_free(Lexer* lexer);
 
