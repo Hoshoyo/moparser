@@ -30,7 +30,7 @@ File_Info load_file(const char* filename) {
 int main(int argc, char** argv) {
     File_Info finfo= {0};
     if(argc < 2) {
-        finfo = load_file("./moparser/test/test.h");
+        finfo = load_file("./test/test.h");
     } else {
         finfo = load_file(argv[1]);
     }

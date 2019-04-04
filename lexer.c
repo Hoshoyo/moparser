@@ -2,8 +2,6 @@
 #include "light_array.h"
 #include <string.h>
 
-// https://docs.microsoft.com/en-us/cpp/c-language/c-floating-point-constants?view=vs-2017
-
 static bool
 is_letter(char c) {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
@@ -233,7 +231,7 @@ token_next(Lexer* lexer) {
         case '!':{
             ++at;
             if(*at == '=') {
-                r.type = TOKEN_LESS_EQUAL;
+                r.type = TOKEN_NOT_EQUAL;
                 ++at;
             } else {
                 r.type = '!';
@@ -369,6 +367,7 @@ token_next(Lexer* lexer) {
 			// TODO(psv): Implement Long suffix  L' c-char-sequence '
             r.type = TOKEN_CHAR_LITERAL;
             at++;
+			r.data++;
             if (*at == '\'') {
                 at++;
                 // TODO(psv): empty character constant error
@@ -547,7 +546,9 @@ lexer_eat_whitespace(Lexer* lexer) {
             if(c == '/' && lexer->stream[lexer->index + 1] == '/') {
                 // single line comment
                 lexer->index += 2;
-                while(lexer->stream[lexer->index++] != '\n');
+				while (lexer->stream[lexer->index] && lexer->stream[lexer->index] != '\n') {
+					lexer->index++;
+				}
                 lexer->line++;
                 lexer->column = 0;
             } else if(c == '/' && lexer->stream[lexer->index + 1] == '*') {
@@ -605,12 +606,13 @@ lexer_cstr(Lexer* lexer, char* str, s32 length, u32 flags) {
         lexer_eat_whitespace(lexer);
         Token t = token_next(lexer);
 
+        // push token
+		array_push(tokens, t);
+
         if(t.type == TOKEN_EOF) break;
 
         // token_print(t);
 
-        // push token
-		array_push(tokens, t);
     }
 
 	lexer->tokens = tokens;

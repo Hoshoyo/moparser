@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <assert.h>
 
+// https://docs.microsoft.com/en-us/cpp/c-language/c-floating-point-constants?view=vs-2017
+
 static char parser_error_buffer[1024];
 
 // unary-operator: one of
@@ -14,7 +16,8 @@ static char parser_error_buffer[1024];
 
 static bool
 is_type_name(Token* t) {
-	return false;
+	// TODO(psv): implement
+	return true;
 }
 
 static bool
@@ -73,55 +76,91 @@ Parser_Result
 parse_postfix_expression(Lexer* lexer) {
 	Parser_Result res = { 0 };
 
-	s32 start = lexer->index;
 	res = parse_primary_expression(lexer);
 
-	if (res.status == PARSER_STATUS_FATAL) {
-		lexer->index = start;
-
-		res = parse_postfix_expression(lexer);
-		if (res.status == PARSER_STATUS_FATAL)
-			return res;
+	bool finding = true;
+	while (finding) {
 		Token* next = lexer_peek(lexer);
+		Ast* left = res.node;
+
 		switch (next->type) {
-			case '[': {
-				lexer_next(lexer);
-				res = parse_expression(lexer);
-				if (res.status == PARSER_STATUS_FATAL)
-					return res;
-				res = require_token(lexer, ']');
-				if (res.status == PARSER_STATUS_FATAL)
-					return res;
-			} break;
-			case '(': {
-				lexer_next(lexer);
-				if (lexer_peek(lexer)->type != ')') {
-					res = parse_argument_expression_list(lexer);
-				}
-				res = require_token(lexer, ')');
-				if (res.status == PARSER_STATUS_FATAL)
-					return res;
-			} break;
-			case '.': {
-				lexer_next(lexer);
-				res = require_token(lexer, TOKEN_IDENTIFIER);
-				if (res.status == PARSER_STATUS_FATAL)
-					return res;
-			} break;
-			case TOKEN_ARROW: {
-				lexer_next(lexer);
-				res = require_token(lexer, TOKEN_IDENTIFIER);
-				if (res.status == PARSER_STATUS_FATAL)
-					return res;
-			} break;
-			case TOKEN_PLUS_PLUS:
-				lexer_next(lexer);
-				break;
-			case TOKEN_MINUS_MINUS:
-				lexer_next(lexer);
-				break;
-			default:
-				break;
+		case '[': {
+			lexer_next(lexer);
+			res = parse_expression(lexer);
+			Ast* right = res.node;
+			if (res.status == PARSER_STATUS_FATAL)
+				return res;
+			res = require_token(lexer, ']');
+			if (res.status == PARSER_STATUS_FATAL)
+				return res;
+			Ast* node = allocate_node();
+			node->kind = AST_EXPRESSION_POSTFIX_BINARY;
+			node->expression_postfix_binary.left = left;
+			node->expression_postfix_binary.right = right;
+			node->expression_postfix_binary.po = POSTFIX_ARRAY_ACCESS;
+			res.node = node;
+		} break;
+		case '(': {
+			lexer_next(lexer);
+			Ast* right = 0;
+			if (lexer_peek(lexer)->type != ')') {
+				res = parse_argument_expression_list(lexer);
+				right = res.node;
+			}
+			res = require_token(lexer, ')');
+			if (res.status == PARSER_STATUS_FATAL)
+				return res;
+			Ast* node = allocate_node();
+			node->kind = AST_EXPRESSION_POSTFIX_BINARY;
+			node->expression_postfix_binary.left = left;
+			node->expression_postfix_binary.right = right;
+			node->expression_postfix_binary.po = POSTFIX_PROC_CALL;
+			res.node = node;
+		} break;
+		case '.': {
+			lexer_next(lexer);
+			res = parse_identifier(lexer);
+			if (res.status == PARSER_STATUS_FATAL)
+				return res;
+
+			Ast* node = allocate_node();
+			node->kind = AST_EXPRESSION_POSTFIX_BINARY;
+			node->expression_postfix_binary.left = left;
+			node->expression_postfix_binary.right = res.node;
+			node->expression_postfix_binary.po = POSTFIX_DOT;
+			res.node = node;
+		} break;
+		case TOKEN_ARROW: {
+			lexer_next(lexer);
+			res = parse_identifier(lexer);
+			if (res.status == PARSER_STATUS_FATAL)
+				return res;
+			Ast* node = allocate_node();
+			node->kind = AST_EXPRESSION_POSTFIX_BINARY;
+			node->expression_postfix_binary.left = left;
+			node->expression_postfix_binary.right = res.node;
+			node->expression_postfix_binary.po = POSTFIX_ARROW;
+			res.node = node;
+		} break;
+		case TOKEN_PLUS_PLUS: {
+			lexer_next(lexer);
+			Ast* node = allocate_node();
+			node->kind = AST_EXPRESSION_POSTFIX_UNARY;
+			node->expression_postfix_unary.expr = left;
+			node->expression_postfix_unary.po = POSTFIX_PLUS_PLUS;
+			res.node = node;
+		} break;
+		case TOKEN_MINUS_MINUS: {
+			lexer_next(lexer);
+			Ast* node = allocate_node();
+			node->kind = AST_EXPRESSION_POSTFIX_UNARY;
+			node->expression_postfix_unary.expr = left;
+			node->expression_postfix_unary.po = POSTFIX_MINUS_MINUS;
+			res.node = node;
+		} break;
+		default:
+			finding = false;
+			break;
 		}
 	}
 
@@ -133,8 +172,30 @@ parse_postfix_expression(Lexer* lexer) {
 // argument-expression-list , assignment-expression
 Parser_Result 
 parse_argument_expression_list(Lexer* lexer) {
-	// TODO(psv): implement argument expression list
-	return parse_assignment_expression(lexer);
+	Parser_Result res = { 0 };
+	Ast* last_node = 0;
+
+	res = parse_assignment_expression(lexer);
+	if (res.status == PARSER_STATUS_FATAL)
+		return res;
+
+	Ast* left = res.node;
+
+	while(lexer_peek(lexer)->type == ',')
+	{
+		lexer_next(lexer);
+
+		Parser_Result right = parse_assignment_expression(lexer);
+
+		Ast* node = allocate_node();
+		node->kind = AST_EXPRESSION_ARGUMENT_LIST;
+		node->expression_argument_list.next = right.node;
+		node->expression_argument_list.expr = left;
+		left = node;
+		res.node = node;
+	}
+
+	return res;
 }
 
 // unary-expression:
@@ -215,6 +276,9 @@ parse_cast_expression(Lexer* lexer) {
 		lexer_next(lexer); // eat '('
 		Parser_Result type_name = parse_type_name(lexer);
 		if(type_name.status == PARSER_STATUS_FATAL)
+			return res;
+		res = require_token(lexer, ')');
+		if (res.status == PARSER_STATUS_FATAL)
 			return res;
 
 		Parser_Result expr = parse_cast_expression(lexer);
@@ -537,7 +601,7 @@ Parser_Result parse_logical_or_expression(Lexer* lexer) {
 	if (res.status == PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
-			if (op->type == TOKEN_LOGIC_AND) {
+			if (op->type == TOKEN_LOGIC_OR) {
 				lexer_next(lexer);
 				Parser_Result right = parse_logical_and_expression(lexer);
 
@@ -565,6 +629,7 @@ parse_conditional_expression(Lexer* lexer) {
 	Parser_Result res = { 0 };
 
 	res = parse_logical_or_expression(lexer);
+	Ast* condition = res.node;
 
 	if (res.status == PARSER_STATUS_FATAL)
 		return res;
@@ -574,23 +639,30 @@ parse_conditional_expression(Lexer* lexer) {
 	if (next->type == '?') {
 		lexer_next(lexer);
 		res = parse_expression(lexer);
+		Ast* case_true = res.node;
 		if (res.status == PARSER_STATUS_FATAL)
 			return res;
 		res = require_token(lexer, ':');
 		if (res.status == PARSER_STATUS_FATAL)
 			return res;
 		res = parse_conditional_expression(lexer);
+		Ast* case_false = res.node;
 		if (res.status == PARSER_STATUS_FATAL)
 			return res;
 
-		// TODO(psv): build node
+		Ast* node = allocate_node();
+		node->kind = AST_EXPRESSION_TERNARY;
+		node->expression_ternary.condition = condition;
+		node->expression_ternary.case_true = case_true;
+		node->expression_ternary.case_false = case_false;
+		res.node = node;
 	}
 
 	return res;
 }
 
 // assignment-expression:
-// conditional-expression
+// conditional-expression (unary-expression is a more specific conditional-expression)
 // unary-expression assignment-operator assignment-expression
 Parser_Result 
 parse_assignment_expression(Lexer* lexer) {
@@ -672,18 +744,24 @@ parse_expression(Lexer* lexer) {
 	s32 start = lexer->index;
 	res = parse_assignment_expression(lexer);
 
-	if (res.status == PARSER_STATUS_FATAL) {
-		lexer->index = start;
-		res = parse_expression(lexer);
-		if (res.status == PARSER_STATUS_FATAL)
-			return res;
-		res = require_token(lexer, ',');
-		if (res.status == PARSER_STATUS_FATAL)
-			return res;
-		res = parse_assignment_expression(lexer);
+	// TODO(psv): maybe implement , operator
 
-		// build node
+	return res;
+}
+
+Parser_Result
+parse_identifier(Lexer* lexer) {
+	Parser_Result res = { 0 };
+	Token* t = lexer_next(lexer);
+	if (t->type != TOKEN_IDENTIFIER) {
+		// TODO(psv): write error here
+		res.status = PARSER_STATUS_FATAL;
+		return res;
 	}
+
+	res.node = allocate_node();
+	res.node->kind = AST_EXPRESSION_PRIMARY_IDENTIFIER;
+	res.node->expression_primary.data = t;
 
 	return res;
 }
@@ -756,6 +834,8 @@ parser_print_typename(FILE* out, Ast* typename) {
 
 void
 parser_print_ast(FILE* out, Ast* ast) {
+	if (!ast) return;
+
 	switch (ast->kind) {
 
 		case AST_EXPRESSION_PRIMARY_CONSTANT:
@@ -765,17 +845,45 @@ parser_print_ast(FILE* out, Ast* ast) {
 			fflush(out);
 		}break;
 		case AST_EXPRESSION_CONDITIONAL:
-		case AST_EXPRESSION_ASSIGNMENT:
 			break;
-		case AST_EXPRESSION_POSTFIX:
-			fprintf(out, "<postfix>");
-			break;
-		case AST_EXPRESSION_ARGUMENT_LIST:
-			break;
+		case AST_EXPRESSION_ASSIGNMENT: {
+			parser_print_ast(out, ast->expression_binary.left);
+			fprintf(out, " ");
+			switch (ast->expression_binary.bo) {
+				case BINOP_EQUAL: fprintf(out, "="); break;
+				case BINOP_AND_EQ: fprintf(out, "&="); break;
+				case BINOP_OR_EQ: fprintf(out, "|="); break;
+				case BINOP_MINUS_EQ: fprintf(out, "-="); break;
+				case BINOP_PLUS_EQ: fprintf(out, "+="); break;
+				case BINOP_MOD_EQ: fprintf(out, "%%="); break;
+				case BINOP_TIMES_EQ: fprintf(out, "*="); break;
+				case BINOP_DIV_EQ: fprintf(out, "/="); break;
+				case BINOP_XOR_EQ: fprintf(out, "^="); break;
+				case BINOP_SHL_EQ: fprintf(out, "<<="); break;
+				case BINOP_SHR_EQ: fprintf(out, ">>="); break;
+				default: fprintf(out, "<invalid assignment op>"); break;
+			}
+			fprintf(out, " ");
+			parser_print_ast(out, ast->expression_binary.right);
+		} break;
+		case AST_EXPRESSION_ARGUMENT_LIST: {
+			parser_print_ast(out, ast->expression_argument_list.expr);
+			fprintf(out, ", ");
+			parser_print_ast(out, ast->expression_argument_list.next);
+		} break;
 		case AST_EXPRESSION_UNARY:{
-			fprintf(out, "(%c", ast->expression_unary.uo);
+			switch (ast->expression_unary.uo) {
+				case UNOP_ADDRESS_OF: fprintf(out, "&"); break;
+				case UNOP_DEREFERENCE: fprintf(out, "*"); break;
+				case UNOP_MINUS: fprintf(out, "-"); break;
+				case UNOP_PLUS: fprintf(out, "+"); break;
+				case UNOP_MINUS_MINUS: fprintf(out, "--"); break;
+				case UNOP_PLUS_PLUS: fprintf(out, "++"); break;
+				case UNOP_NOT_BITWISE: fprintf(out, "~"); break;
+				case UNOP_NOT_LOGICAL: fprintf(out, "!"); break;
+				default: fprintf(out, "<unknown expression unary>"); break;
+			}
 			parser_print_ast(out, ast->expression_unary.expr);
-			fprintf(out, ")");
 		}break;
 		case AST_EXPRESSION_CAST:
 			fprintf(out, "(");
@@ -797,31 +905,137 @@ parser_print_ast(FILE* out, Ast* ast) {
 			fflush(out);
 		}break;
 		case AST_EXPRESSION_SHIFT:
+			fprintf(out, "(");
+			parser_print_ast(out, ast->expression_binary.left);
+			fprintf(out, " ");
+				switch (ast->expression_binary.bo) {
+				case BINOP_SHL: fprintf(out, "<<"); break;
+				case BINOP_SHR: fprintf(out, ">>"); break;
+				default: fprintf(out, "<invalid shift operator>"); break;
+			}
+			fprintf(out, " ");
+			parser_print_ast(out, ast->expression_binary.right);
+			fprintf(out, ")");
+			break;
 		case AST_EXPRESSION_RELATIONAL:
+			fprintf(out, "(");
+			parser_print_ast(out, ast->expression_binary.left);
+			fprintf(out, " ");
+			switch (ast->expression_binary.bo) {
+				case '<': fprintf(out, "<"); break;
+				case '>': fprintf(out, ">"); break;
+				case BINOP_LE: fprintf(out, "<="); break;
+				case BINOP_GE: fprintf(out, ">="); break;
+				default: fprintf(out, "<invalid relational operator>"); break;
+			}
+			fprintf(out, " ");
+			parser_print_ast(out, ast->expression_binary.right);
+			fprintf(out, ")");
+			break;
 		case AST_EXPRESSION_EQUALITY:
-		case AST_EXPRESSION_AND:
-		case AST_EXPRESSION_EXCLUSIVE_OR:
-		case AST_EXPRESSION_INCLUSIVE_OR:
-		case AST_EXPRESSION_LOGICAL_AND:
-		case AST_EXPRESSION_LOGICAL_OR:
+			fprintf(out, "(");
+			parser_print_ast(out, ast->expression_binary.left);
+			switch (ast->expression_binary.bo) {
+				case BINOP_EQUAL_EQUAL: fprintf(out, " == "); break;
+				case BINOP_NOT_EQUAL: fprintf(out, " != "); break;
+				default: fprintf(out, "<invalid equality operator>"); break;
+			}
+			parser_print_ast(out, ast->expression_binary.right);
+			fprintf(out, ")");
+			break;
+		case AST_EXPRESSION_AND: {
+			fprintf(out, "(");
+			parser_print_ast(out, ast->expression_binary.left);
+			fprintf(out, " & ");
+			parser_print_ast(out, ast->expression_binary.right);
+			fprintf(out, ")");
+		} break;
+		case AST_EXPRESSION_EXCLUSIVE_OR: {
+			fprintf(out, "(");
+			parser_print_ast(out, ast->expression_binary.left);
+			fprintf(out, " ^ ");
+			parser_print_ast(out, ast->expression_binary.right);
+			fprintf(out, ")");
+		}break;
+		case AST_EXPRESSION_INCLUSIVE_OR: {
+			fprintf(out, "(");
+			parser_print_ast(out, ast->expression_binary.left);
+			fprintf(out, " | ");
+			parser_print_ast(out, ast->expression_binary.right);
+			fprintf(out, ")");
+		}break;
+		case AST_EXPRESSION_LOGICAL_AND: {
+			fprintf(out, "(");
+			parser_print_ast(out, ast->expression_binary.left);
+			fprintf(out, " && ");
+			parser_print_ast(out, ast->expression_binary.right);
+			fprintf(out, ")");
+		} break;
+		case AST_EXPRESSION_LOGICAL_OR: {
+			fprintf(out, "(");
+			parser_print_ast(out, ast->expression_binary.left);
+			fprintf(out, " || ");
+			parser_print_ast(out, ast->expression_binary.right);
+			fprintf(out, ")");
+		}break;
+
+		case AST_EXPRESSION_POSTFIX_UNARY: {
+			if (ast->expression_postfix_unary.expr) {
+				parser_print_ast(out, ast->expression_postfix_unary.expr);
+				switch (ast->expression_postfix_unary.po) {
+					case POSTFIX_MINUS_MINUS: fprintf(out, "--"); break;
+					case POSTFIX_PLUS_PLUS: fprintf(out, "++"); break;
+					default: fprintf(out, "<unknown postfix unary>"); break;
+				}
+			}
+		}break;
+		case AST_EXPRESSION_POSTFIX_BINARY: {
+			parser_print_ast(out, ast->expression_postfix_binary.left);
+			switch (ast->expression_postfix_binary.po) {
+				case POSTFIX_ARROW: fprintf(out, "->"); break;
+				case POSTFIX_DOT: fprintf(out, "."); break;
+				case POSTFIX_ARRAY_ACCESS: fprintf(out, "["); break;
+				case POSTFIX_PROC_CALL: fprintf(out, "("); break;
+				default: fprintf(out, "<unknown postfix binary>"); break;
+			}
+			if (ast->expression_postfix_binary.right) {
+				parser_print_ast(out, ast->expression_postfix_binary.right);
+			}
+			switch (ast->expression_postfix_binary.po) {
+				case POSTFIX_ARROW: break;
+				case POSTFIX_DOT: break;
+				case POSTFIX_ARRAY_ACCESS: fprintf(out, "]"); break;
+				case POSTFIX_PROC_CALL: fprintf(out, ")"); break;
+				default: fprintf(out, "<unknown postfix binary>"); break;
+			}
+		}break;
+		case AST_EXPRESSION_TERNARY: {
+			fprintf(out, "(");
+			parser_print_ast(out, ast->expression_ternary.condition);
+			fprintf(out, ") ? (");
+			parser_print_ast(out, ast->expression_ternary.case_true);
+			fprintf(out, ") : (");
+			parser_print_ast(out, ast->expression_ternary.case_false);
+			fprintf(out, ")");
+			fflush(out);
+		}break;
 
 		case AST_CONSTANT_FLOATING_POINT:
 		case AST_CONSTANT_INTEGER: {
 			fprintf(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
 			fflush(out);
 		}break;
-		case AST_CONSTANT_ENUMARATION:
+		case AST_CONSTANT_ENUMARATION: {
+			fprintf(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
+			fflush(out);
+		}break;
 		case AST_CONSTANT_CHARACTER:
-
-		// Operators
-		case AST_OPERATOR_UNARY:
-		case AST_OPERATOR_ADDITIVE:
-		case AST_OPERATOR_MULTIPLICATIVE:
-		case AST_OPERATOR_COMPARISON:
-		case AST_OPERATOR_SHIFT:
+			fprintf(out, "'%.*s'", ast->expression_primary.data->length, ast->expression_primary.data->data);
+			fflush(out);
 			break;
+
 		default: {
-			printf("<unknown>");
+			printf("<unknown ast node>");
 			fflush(out);
 		}break;
 	}
