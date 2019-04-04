@@ -2,6 +2,40 @@
 #include "lexer.h"
 #include <stdio.h>
 
+typedef enum {
+	TYPE_NONE = 0,
+	TYPE_PRIMITIVE,
+	TYPE_STRUCT,
+	TYPE_UNION,
+	TYPE_ALIAS, // typedef
+	TYPE_QUALIFIER,
+} Type_Kind;
+
+typedef enum {
+	TYPE_PRIMITIVE_VOID,
+	TYPE_PRIMITIVE_CHAR,
+	TYPE_PRIMITIVE_SHORT,
+	TYPE_PRIMITIVE_INT,
+	TYPE_PRIMITIVE_LONG,
+	TYPE_PRIMITIVE_FLOAT,
+	TYPE_PRIMITIVE_DOUBLE,
+	TYPE_PRIMITIVE_SIGNED,
+	TYPE_PRIMITIVE_UNSIGNED,
+} Type_Primitive;
+
+typedef enum {
+	TYPE_QUALIFIER_CONST = FLAG(0),
+	TYPE_QUALIFIER_VOLATILE = FLAG(1),
+} Type_Qualifier;
+
+typedef struct {
+	Type_Kind kind;
+	u32       qualifiers;
+	union {
+		Type_Primitive primitive;
+		Token* alias;
+	};
+} Ast_Type;
 
 typedef enum {
 	POSTFIX_ARRAY_ACCESS = '[',
@@ -91,7 +125,22 @@ typedef enum {
 	//AST_OPERATOR_COMPARISON,
 	//AST_OPERATOR_SHIFT,
 
+	// Type
+	AST_TYPE_NAME,
+	AST_TYPE_INFO,
+	AST_TYPE_POINTER,
+
 } Node_Kind;
+
+typedef struct {
+	struct Ast_t* qualifiers_specifiers;
+	struct Ast_t* abstract_declarator;
+} Ast_Type_Name;
+
+typedef struct {
+	struct Ast_t* qualifiers;
+	struct Ast_t* next;
+} Ast_Type_Pointer;
 
 typedef struct {
 	Binary_Operator bo;
@@ -146,6 +195,9 @@ typedef struct Ast_t {
 		Ast_Expression_Postfix_Binary expression_postfix_binary;
 		Ast_Expression_Argument_List expression_argument_list;
 		Ast_Expression_Ternary expression_ternary;
+		Ast_Type type_info;
+		Ast_Type_Name type_name;
+		Ast_Type_Pointer pointer;
 	};
 } Ast;
 

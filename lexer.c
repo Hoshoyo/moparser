@@ -621,6 +621,11 @@ lexer_cstr(Lexer* lexer, char* str, s32 length, u32 flags) {
     return tokens;
 }
 
+void
+lexer_rewind(Lexer* lexer, s32 count) {
+    lexer->index -= count;
+}
+
 Token* 
 lexer_next(Lexer* lexer) {
 	return &lexer->tokens[lexer->index++];

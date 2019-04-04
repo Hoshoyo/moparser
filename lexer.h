@@ -113,6 +113,7 @@ Token* lexer_cstr(Lexer* lexer, char* str, s32 length, u32 flags);
 Token* lexer_next(Lexer* lexer);
 Token* lexer_peek(Lexer* lexer);
 Token* lexer_peek_n(Lexer* lexer, s32 n);
+void   lexer_rewind(Lexer* lexer, s32 count);
 
 void   lexer_free(Lexer* lexer);
 
