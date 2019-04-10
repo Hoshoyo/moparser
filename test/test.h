@@ -1,13 +1,15 @@
 // Type declarations
+int(*)(const static int unsigned)
 //int[]
-int(*)(int)
+//char**
+//int(*)(int)
 //const int* volatile
 //int**
 //int*
 
 
 // Expressions
-
+//(int*)b + c
 //a + ()b
 //a > b ? 1 : 2
 //x + 'a'

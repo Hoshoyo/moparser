@@ -681,7 +681,7 @@ token_type_to_str(Token_Type token_type) {
 		TOKEN_MINUS_EQUAL: return "-=";
 		TOKEN_TIMES_EQUAL: return "*=";
 		TOKEN_DIV_EQUAL: return "/=";
-		TOKEN_MOD_EQUAL: return "%=";
+		TOKEN_MOD_EQUAL: return "%%=";
 		TOKEN_AND_EQUAL: return "&=";
 		TOKEN_OR_EQUAL: return "|=";
 		TOKEN_XOR_EQUAL: return "^=";

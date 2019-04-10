@@ -35,9 +35,6 @@ int main(int argc, char** argv) {
         finfo = load_file(argv[1]);
     }
 
-	int* foo = 0;
-	double* a = (double((*)))foo;
-
     Lexer lexer = {0};
     Token* tokens = lexer_cstr(&lexer, finfo.data, finfo.size_bytes, 0);
 	//Parser_Result res = parse_expression(&lexer);

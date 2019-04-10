@@ -87,6 +87,17 @@ primitive_from_token(Token* t) {
 	return -1;
 }
 
+static Ast* parser_type_primitive_get_info(Type_Primitive p) {
+	Ast* node = allocate_node();
+
+	node = allocate_node();
+	node->kind = AST_TYPE_INFO;
+	node->specifier_qualifier.primitive[p] = 1;
+	node->specifier_qualifier.kind = p;
+
+	return node;
+}
+
 // type-specifier:
 //     void
 //     char
@@ -264,21 +275,87 @@ parse_constant_expression(Lexer* lexer) {
 	return parse_conditional_expression(lexer);
 }
 
-// declaration-specifiers:
-//     storage-class-specifier declaration-specifiersopt
-//     type-specifier declaration-specifiersopt
-//     type-qualifier declaration-specifiersopt
+Storage_Class
+parse_storage_class_specifier(Lexer* lexer) {
+	Storage_Class res = STORAGE_CLASS_NONE;
+	Token* next = lexer_peek(lexer);
+	
+	switch(next->type) {
+		case TOKEN_KEYWORD_AUTO:
+			res = STORAGE_CLASS_AUTO; break;
+		case TOKEN_KEYWORD_STATIC:
+			res = STORAGE_CLASS_STATIC; break;
+		case TOKEN_KEYWORD_REGISTER:
+			res = STORAGE_CLASS_REGISTER; break;
+		case TOKEN_KEYWORD_EXTERN:
+			res = STORAGE_CLASS_EXTERN; break;
+		case TOKEN_KEYWORD_TYPEDEF:
+			res = STORAGE_CLASS_TYPEDEF; break;
+		default: return res;
+	}
+	lexer_next(lexer);
+	return res;
+}
 
+// declaration-specifiers:
+//     storage-class-specifier declaration-specifiers_opt
+//     type-specifier declaration-specifiers_opt
+//     type-qualifier declaration-specifiers_opt
+Parser_Result
+parse_declaration_specifiers(Lexer* lexer) {
+	Parser_Result res = {0};
+
+	Ast* type = 0;
+	Storage_Class sc = 0;
+
+	while(true) {
+		Storage_Class s = parse_storage_class_specifier(lexer);
+		sc |= s;
+		if(s == STORAGE_CLASS_NONE) {
+			Parser_Result type_spec = parse_type_specifier(lexer, type);
+			if(type_spec.status != PARSER_STATUS_FATAL) {
+				// it was a type specifier
+				type = type_spec.node;
+			} else {
+				Parser_Result type_qual = parse_type_qualifier(lexer, type);
+				if(type_qual.status != PARSER_STATUS_FATAL) {
+					// it was a type qualifier
+					type = type_qual.node;
+				} else {
+					break;
+				}
+			}
+		}
+	}
+
+	if(!type){
+		type = parser_type_primitive_get_info(TYPE_PRIMITIVE_INT);
+	} else if(type->specifier_qualifier.kind == TYPE_NONE) {
+		type->specifier_qualifier.kind = TYPE_PRIMITIVE;
+		type->specifier_qualifier.primitive[TYPE_PRIMITIVE_INT] = 1;
+	}
+	type->specifier_qualifier.storage_class = sc;
+
+	res.node = type;
+
+	return res;
+}
 
 // parameter-declaration:
 //     declaration-specifiers declarator /* Named declarator */
 //     declaration-specifiers abstract-declarator_opt /* Anonymous declarator */
 Parser_Result
 parse_parameter_declaration(Lexer* lexer) {
-	// TODO(psv):
-	Parser_Result res = require_token(lexer, TOKEN_KEYWORD_INT); // @TEMPORARY
+	Parser_Result res = {0};
+
+	Parser_Result decl_spec = parse_declaration_specifiers(lexer);
+	if(decl_spec.status == PARSER_STATUS_FATAL)
+		return decl_spec;
+
 	res.node = allocate_node();
 	res.node->kind = AST_PARAMETER_DECLARATION;
+	res.node->parameter_decl.decl_specifiers = decl_spec.node;
+
 	return res;
 }
 
@@ -1262,6 +1339,8 @@ parse_constant(Lexer* lexer) {
 	return result;
 }
 
+
+#define fprintf(...) fprintf(__VA_ARGS__); fflush(stdout)
 
 void parser_print_abstract_declarator(FILE*, Ast*);
 

@@ -23,6 +23,15 @@ typedef enum {
 } Type_Primitive;
 
 typedef enum {
+	STORAGE_CLASS_NONE     = 0,
+	STORAGE_CLASS_AUTO     = FLAG(0), // auto
+    STORAGE_CLASS_REGISTER = FLAG(1), // register
+    STORAGE_CLASS_STATIC   = FLAG(2), // static
+    STORAGE_CLASS_EXTERN   = FLAG(3), // extern
+    STORAGE_CLASS_TYPEDEF  = FLAG(4), // typedef
+} Storage_Class;
+
+typedef enum {
 	TYPE_QUALIFIER_CONST = FLAG(0),
 	TYPE_QUALIFIER_VOLATILE = FLAG(1),
 } Type_Qualifier;
@@ -30,6 +39,7 @@ typedef enum {
 typedef struct {
 	Type_Kind kind;
 	u32       qualifiers;
+	u32       storage_class;
 	union {
 		Type_Primitive primitive[8];
 		Token* alias;
@@ -211,9 +221,10 @@ typedef struct {
 	struct Ast_t* next;
 } Ast_Parameter_List;
 
-//typedef struct {
-//
-//} Ast_Parameter_Declaration;
+typedef struct {
+	struct Ast_t* decl_specifiers;
+	// TODO:
+} Ast_Parameter_Declaration;
 
 typedef struct Ast_t {
 	Node_Kind kind;
@@ -232,6 +243,7 @@ typedef struct Ast_t {
 		Ast_Abstract_Declarator abstract_type_decl;
 		Ast_Direct_Abstract_Declarator direct_abstract_decl;
 		Ast_Parameter_List parameter_list;
+		Ast_Parameter_Declaration parameter_decl;
 	};
 } Ast;
 
