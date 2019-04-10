@@ -1,9 +1,19 @@
+// Type declarations
+//int[]
+int(*)(int)
+//const int* volatile
+//int**
+//int*
+
+
+// Expressions
+
 //a + ()b
 //a > b ? 1 : 2
 //x + 'a'
 //a << 2 >> 4
 //a < b >= c
-a == b && a != b
+//a == b && a != b
 //1 & true & false
 //1 ^ true ^ false | hello
 //1 | true | false

@@ -4,16 +4,15 @@
 
 typedef enum {
 	TYPE_NONE = 0,
+	TYPE_VOID,
 	TYPE_PRIMITIVE,
 	TYPE_STRUCT,
 	TYPE_UNION,
 	TYPE_ALIAS, // typedef
-	TYPE_QUALIFIER,
 } Type_Kind;
 
 typedef enum {
-	TYPE_PRIMITIVE_VOID,
-	TYPE_PRIMITIVE_CHAR,
+	TYPE_PRIMITIVE_CHAR = 0,
 	TYPE_PRIMITIVE_SHORT,
 	TYPE_PRIMITIVE_INT,
 	TYPE_PRIMITIVE_LONG,
@@ -32,10 +31,10 @@ typedef struct {
 	Type_Kind kind;
 	u32       qualifiers;
 	union {
-		Type_Primitive primitive;
+		Type_Primitive primitive[8];
 		Token* alias;
 	};
-} Ast_Type;
+} Ast_Specifier_Qualifier;
 
 typedef enum {
 	POSTFIX_ARRAY_ACCESS = '[',
@@ -56,6 +55,12 @@ typedef enum {
 	UNOP_NOT_BITWISE = '~',
 	UNOP_NOT_LOGICAL = '!',
 } Unary_Operator;
+
+typedef enum {
+	DIRECT_ABSTRACT_DECL_NONE = 0,
+	DIRECT_ABSTRACT_DECL_ARRAY,
+	DIRECT_ABSTRACT_DECL_FUNCTION,
+} Direct_Abstract_Decl_Type;
 
 typedef enum {
 	BINOP_PLUS  = '+',
@@ -129,7 +134,12 @@ typedef enum {
 	AST_TYPE_NAME,
 	AST_TYPE_INFO,
 	AST_TYPE_POINTER,
+	AST_TYPE_ABSTRACT_DECLARATOR,
+	AST_TYPE_DIRECT_ABSTRACT_DECLARATOR,
 
+	// Params
+	AST_PARAMETER_LIST,
+	AST_PARAMETER_DECLARATION,
 } Node_Kind;
 
 typedef struct {
@@ -184,6 +194,27 @@ typedef struct {
 	struct Ast_t* case_false;
 } Ast_Expression_Ternary;
 
+typedef struct {
+	struct Ast_t* pointer; // optional
+	struct Ast_t* direct_abstract_decl;
+} Ast_Abstract_Declarator;
+
+typedef struct {
+	Direct_Abstract_Decl_Type type;
+	struct Ast_t* left_opt;
+	struct Ast_t* right_opt;
+} Ast_Direct_Abstract_Declarator;
+
+typedef struct {
+	bool is_vararg;
+	struct Ast_t* param_decl;
+	struct Ast_t* next;
+} Ast_Parameter_List;
+
+//typedef struct {
+//
+//} Ast_Parameter_Declaration;
+
 typedef struct Ast_t {
 	Node_Kind kind;
 	union {
@@ -195,9 +226,12 @@ typedef struct Ast_t {
 		Ast_Expression_Postfix_Binary expression_postfix_binary;
 		Ast_Expression_Argument_List expression_argument_list;
 		Ast_Expression_Ternary expression_ternary;
-		Ast_Type type_info;
+		Ast_Specifier_Qualifier specifier_qualifier;
 		Ast_Type_Name type_name;
 		Ast_Type_Pointer pointer;
+		Ast_Abstract_Declarator abstract_type_decl;
+		Ast_Direct_Abstract_Declarator direct_abstract_decl;
+		Ast_Parameter_List parameter_list;
 	};
 } Ast;
 
