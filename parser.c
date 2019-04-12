@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <assert.h>
 
+// Declarations
+// https://docs.microsoft.com/en-us/cpp/c-language/summary-of-declarations?view=vs-2017
+
 // https://docs.microsoft.com/en-us/cpp/c-language/c-floating-point-constants?view=vs-2017
 
 static char parser_error_buffer[1024];
@@ -341,6 +344,70 @@ parse_declaration_specifiers(Lexer* lexer) {
 	return res;
 }
 
+// direct-declarator:
+//     identifier
+//     ( declarator )
+//     direct-declarator [ constant-expression_opt ]
+//     direct-declarator ( parameter-type-list ) /* New-style declarator */
+//     direct-declarator ( identifier-list_opt ) /* Obsolete-style declarator */
+Parser_Result
+parse_direct_declarator(Lexer* lexer) {
+	Parser_Result res = {0};
+
+	Token* next = lexer_peek(lexer);
+
+	if(next->type == TOKEN_IDENTIFIER) {
+		res.node = allocate_node();
+		//res.node->kind = AST_DIRECT_DECLARATOR;
+	} else if(next->type == '(') {
+		res.node = allocate_node();
+		//res.node->kind = AST_DIRECT_DECLARATOR;
+		Parser_Result decl = parse_declarator(lexer);
+		// TODO(psv): use declarator
+		Parser_Result r = require_token(lexer, ')');
+		if(r.status == PARSER_STATUS_FATAL)
+			return r;
+	}
+
+	while(true) {
+		next = lexer_peek(lexer);
+		if(next->type == '[') {
+
+		} else if(next->type == '(') {
+
+		} else {
+			break;
+		}
+	}
+
+	//parse_parameter_type_list(lexer);
+
+	return res;
+}
+
+// declarator:
+//     pointer_opt direct-declarator
+Parser_Result
+parse_declarator(Lexer* lexer) {
+	Parser_Result res = {0};
+	Parser_Result ptr_opt = {0};
+
+	if(lexer_peek(lexer)->type == '*') {
+		ptr_opt = parse_pointer(lexer);
+	}
+
+	res = parse_direct_declarator(lexer);
+	if(res.status == PARSER_STATUS_FATAL)
+		return res;
+
+	Ast* node = allocate_node();
+	//node->kind == AST_DECLARATOR;
+	// TODO(psv): create declarator
+	res.node = node;
+
+	return res;
+}
+
 // parameter-declaration:
 //     declaration-specifiers declarator /* Named declarator */
 //     declaration-specifiers abstract-declarator_opt /* Anonymous declarator */
@@ -351,6 +418,10 @@ parse_parameter_declaration(Lexer* lexer) {
 	Parser_Result decl_spec = parse_declaration_specifiers(lexer);
 	if(decl_spec.status == PARSER_STATUS_FATAL)
 		return decl_spec;
+
+	Parser_Result declarator = parse_declarator(lexer);
+	if(res.status == PARSER_STATUS_FATAL)
+		return res;
 
 	res.node = allocate_node();
 	res.node->kind = AST_PARAMETER_DECLARATION;
@@ -364,22 +435,23 @@ parse_parameter_declaration(Lexer* lexer) {
 //     parameter-list , parameter-declaration
 Parser_Result
 parse_parameter_list(Lexer* lexer) {
-	Parser_Result res = { 0 };
-	Parser_Result first = { 0 };
-
-	Ast* last = 0;
+	Parser_Result list = { 0 };
 
 	while (true) {
-		res = parse_parameter_declaration(lexer);
+		if(lexer_peek(lexer)->type == '.')
+			break;
+
+		Parser_Result res = parse_parameter_declaration(lexer);
 		if (res.status == PARSER_STATUS_FATAL)
 			break;
 
-		if (last) {
-			last->parameter_list.next = res.node;
-			last = res.node;
-		} else {
-			first = res;
+		if (!list.node) {
+			list.node = allocate_node();
+			list.node->kind = AST_PARAMETER_LIST;
+			list.node->parameter_list.param_decl = array_new(struct Ast_t*);
+			list.node->parameter_list.is_vararg = false;
 		}
+		array_push(list.node->parameter_list.param_decl, res.node);
 
 		Token* next = lexer_peek(lexer);
 		if (next->type != ',') {
@@ -388,10 +460,7 @@ parse_parameter_list(Lexer* lexer) {
 		lexer_next(lexer); // eat ','
 	}
 
-	first.status = res.status;
-	first.error_message = res.error_message;
-
-	return first;
+	return list;
 }
 
 // parameter-type-list:            /* The parameter list */
@@ -404,24 +473,24 @@ parse_parameter_type_list(Lexer* lexer) {
 
 	res = parse_parameter_list(lexer);
 	if (res.status == PARSER_STATUS_FATAL) {
-		if (lexer_peek(lexer)->type == '.') {
-			// Require three '.'
-			lexer_next(lexer);
-			Parser_Result status = require_token(lexer, '.');
-			if (status.status == PARSER_STATUS_FATAL)
-				return status;
-			status = require_token(lexer, '.');
-			if (status.status == PARSER_STATUS_FATAL)
-				return status;
+		return res;
+	}
 
-			if (res.node) {
-				res.node->parameter_list.is_vararg = true;
-			} else {
-				res.node = allocate_node();
-				res.node->parameter_list.is_vararg = true;
-			}
+	if (lexer_peek(lexer)->type == '.') {
+		// Require three '.'
+		lexer_next(lexer);
+		Parser_Result status = require_token(lexer, '.');
+		if (status.status == PARSER_STATUS_FATAL)
+			return status;
+		status = require_token(lexer, '.');
+		if (status.status == PARSER_STATUS_FATAL)
+			return status;
+
+		if (res.node) {
+			res.node->parameter_list.is_vararg = true;
 		} else {
-			return res;
+			res.node = allocate_node();
+			res.node->parameter_list.is_vararg = true;
 		}
 	}
 
@@ -456,6 +525,7 @@ parse_direct_abstract_declarator(Lexer* lexer) {
 				node = new_node;
 			} else {
 				new_node->direct_abstract_decl.left_opt = node;
+				node = new_node;
 			}
 		} else if (next->type == '(') {
 			lexer_next(lexer);
@@ -480,6 +550,7 @@ parse_direct_abstract_declarator(Lexer* lexer) {
 					node = new_node;
 				} else {
 					node->direct_abstract_decl.left_opt = new_node;
+					node = new_node;
 				}
 			} else {
 				// it is a parameter-type-list_opt
@@ -568,7 +639,6 @@ parse_abstract_declarator(Lexer* lexer) {
 //    specifier-qualifier-list abstract-declarator_opt
 Parser_Result 
 parse_type_name(Lexer* lexer) {
-	// TODO(psv): implement
 	Parser_Result spec_qual = parse_specifier_qualifier_list(lexer);
 	if(spec_qual.status == PARSER_STATUS_FATAL)
 		return spec_qual;
@@ -1343,6 +1413,7 @@ parse_constant(Lexer* lexer) {
 #define fprintf(...) fprintf(__VA_ARGS__); fflush(stdout)
 
 void parser_print_abstract_declarator(FILE*, Ast*);
+void parser_print_specifiers_qualifiers(FILE* out, Ast* sq);
 
 void
 parser_print_token(FILE* out, Token* t) {
@@ -1354,10 +1425,10 @@ parser_print_type_qualifier_list(FILE* out, Ast* q) {
 	if (!q) return;
 	assert(q->kind == AST_TYPE_INFO);
 	if (q->specifier_qualifier.qualifiers & TYPE_QUALIFIER_CONST) {
-		fprintf(out, "const");
+		fprintf(out, "const ");
 	}
 	if (q->specifier_qualifier.qualifiers & TYPE_QUALIFIER_VOLATILE) {
-		fprintf(out, "volatile");
+		fprintf(out, "volatile ");
 	}
 }
 
@@ -1372,15 +1443,18 @@ parser_print_pointer(FILE* out, Ast* pointer) {
 
 void
 parser_print_param_decl(FILE* out, Ast* decl) {
-	// TODO(psv): implement
-	fprintf(out, "int");
+	assert(decl->kind == AST_PARAMETER_DECLARATION);
+	//decl->parameter_decl.decl_specifiers
+	// @TODO
+	//decl->parameter_decl.decl_specifiers
+	parser_print_specifiers_qualifiers(out, decl->parameter_decl.decl_specifiers);
 }
 
 void
 parser_print_parameter_list(FILE* out, Ast* p) {
-	for (Ast* n = p; n != 0; n = n->parameter_list.next) {
-		if (n != p) fprintf(out, ",");
-		parser_print_param_decl(out, p->parameter_list.param_decl);
+	for (u64 i = 0; i < array_length(p->parameter_list.param_decl); ++i) {
+		if (i != 0) fprintf(out, ",");
+		parser_print_param_decl(out, p->parameter_list.param_decl[i]);
 	}
 	if (p->parameter_list.is_vararg)
 		fprintf(out, ", ...");
@@ -1440,14 +1514,14 @@ parser_print_specifiers_qualifiers(FILE* out, Ast* sq) {
 				for (s32 c = 0; c < sq->specifier_qualifier.primitive[i]; ++c) {
 					if (c != 0) fprintf(out, " ");
 					switch (i) {
-						case TYPE_PRIMITIVE_CHAR:		fprintf(out, "char"); break;
-						case TYPE_PRIMITIVE_DOUBLE:		fprintf(out, "double"); break;
-						case TYPE_PRIMITIVE_FLOAT:		fprintf(out, "float"); break;
-						case TYPE_PRIMITIVE_INT:		fprintf(out, "int"); break;
-						case TYPE_PRIMITIVE_LONG:		fprintf(out, "long"); break;
-						case TYPE_PRIMITIVE_SHORT:		fprintf(out, "short"); break;
-						case TYPE_PRIMITIVE_SIGNED:		fprintf(out, "signed"); break;
-						case TYPE_PRIMITIVE_UNSIGNED:	fprintf(out, "unsigned"); break;
+						case TYPE_PRIMITIVE_CHAR:		fprintf(out, "char "); break;
+						case TYPE_PRIMITIVE_DOUBLE:		fprintf(out, "double "); break;
+						case TYPE_PRIMITIVE_FLOAT:		fprintf(out, "float "); break;
+						case TYPE_PRIMITIVE_INT:		fprintf(out, "int "); break;
+						case TYPE_PRIMITIVE_LONG:		fprintf(out, "long "); break;
+						case TYPE_PRIMITIVE_SHORT:		fprintf(out, "short "); break;
+						case TYPE_PRIMITIVE_SIGNED:		fprintf(out, "signed "); break;
+						case TYPE_PRIMITIVE_UNSIGNED:	fprintf(out, "unsigned "); break;
 						default: fprintf(out, "<invalid primitive type>"); break;
 					}
 				}

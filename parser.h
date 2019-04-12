@@ -1,6 +1,7 @@
 #include "common.h"
 #include "lexer.h"
 #include <stdio.h>
+#include "light_array.h"
 
 typedef enum {
 	TYPE_NONE = 0,
@@ -217,8 +218,7 @@ typedef struct {
 
 typedef struct {
 	bool is_vararg;
-	struct Ast_t* param_decl;
-	struct Ast_t* next;
+	struct Ast_t** param_decl;
 } Ast_Parameter_List;
 
 typedef struct {

@@ -1,5 +1,9 @@
 // Type declarations
-int(*)(const static int unsigned)
+int (*(*)(int (*)(int, int), int))(int, int)
+//int(*)()[2]
+//int[512][321]
+//int(*)(const static int unsigned, int, ...)
+//int(*)(const static int unsigned)
 //int[]
 //char**
 //int(*)(int)
