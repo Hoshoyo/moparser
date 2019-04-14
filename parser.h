@@ -262,7 +262,6 @@ typedef struct {
 } Ast_Struct_Declarator;
 
 typedef struct {
-	struct Ast_t* type_specifier;
 	struct Ast_t* declarator;
 	struct Ast_t* const_expr;
 } Ast_Struct_Declarator_Bitfield;

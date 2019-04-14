@@ -412,41 +412,32 @@ parse_constant_expression(Lexer* lexer) {
 
 // struct-declarator:
 //     declarator
-//     type-specifier declarator_opt : constant-expression
+//     declarator_opt : constant-expression
 Parser_Result
 parse_struct_declarator(Lexer* lexer) {
 	Parser_Result res = {0};
 
-	Parser_Result type_spec = parse_type_specifier(lexer, 0);
-	if(type_spec.status == PARSER_STATUS_FATAL) {
-		Parser_Result r = parse_abstract_declarator(lexer, true);
-		if(r.status == PARSER_STATUS_FATAL)
-			return r;
-		
-		res.node = allocate_node();
-		res.node->kind = AST_TYPE_STRUCT_DECLARATOR;
-		res.node->struct_declarator.declarator = r.node;
-	} else {
-		Parser_Result decl = {0};
-		if(lexer_peek(lexer)->type != ':') {
-			decl = parse_abstract_declarator(lexer, true);
-			if(decl.status == PARSER_STATUS_FATAL)
-				return decl;
-		}
-		Parser_Result r = require_token(lexer, ':');
-		if(r.status == PARSER_STATUS_FATAL)
-			return r;
-		
-		Parser_Result const_expr = parse_constant_expression(lexer);
+	Parser_Result decl = {0};
+	Parser_Result const_expr = {0};
+
+	if(lexer_peek(lexer)->type != ':') {
+		decl = parse_abstract_declarator(lexer, true);
+		if(decl.status == PARSER_STATUS_FATAL)
+			return decl;
+	}
+
+	if(lexer_peek(lexer)->type == ':') {
+		lexer_next(lexer);
+		const_expr = parse_constant_expression(lexer);
 		if(const_expr.status == PARSER_STATUS_FATAL)
 			return const_expr;
-		
-		res.node = allocate_node();
-		res.node->kind = AST_TYPE_STRUCT_DECLARATOR_BITFIELD;
-		res.node->struct_declarator_bitfield.const_expr = const_expr.node;
-		res.node->struct_declarator_bitfield.declarator = decl.node;
-		res.node->struct_declarator_bitfield.type_specifier = type_spec.node;
 	}
+	
+	res.node = allocate_node();
+	res.node->kind = AST_TYPE_STRUCT_DECLARATOR_BITFIELD;
+	res.node->struct_declarator_bitfield.const_expr = const_expr.node;
+	res.node->struct_declarator_bitfield.declarator = decl.node;
+
 	return res;
 }
 
@@ -1766,8 +1757,6 @@ parser_print_struct_declarator(FILE* out, Ast* d) {
 void
 parser_print_struct_declarator_bitfield(FILE* out, Ast* d) {
 	assert(d->kind == AST_TYPE_STRUCT_DECLARATOR_BITFIELD);
-	parser_print_ast(out, d->struct_declarator_bitfield.type_specifier);
-	fprintf(out, " ");
 	if(d->struct_declarator_bitfield.declarator) {
 		parser_print_ast(out, d->struct_declarator_bitfield.declarator);
 	}
@@ -1781,8 +1770,9 @@ parser_print_struct_declarator_list(FILE* out, Ast* d) {
 	for(u64 i = 0; i < array_length(d->struct_declarator_list.list); ++i) {
 		if(i > 0) fprintf(out, ", ");
 		Node_Kind kind = d->struct_declarator_list.list[i]->kind;
+		Ast* node = d->struct_declarator_list.list[i];
 		if(kind == AST_TYPE_STRUCT_DECLARATOR){
-			parser_print_struct_declarator(out, d->struct_declarator_list.list[i]);
+			parser_print_struct_declarator(out, node);
 		} else if(kind == AST_TYPE_STRUCT_DECLARATOR_BITFIELD) {
 			parser_print_struct_declarator_bitfield(out, d->struct_declaration_list.list[i]);
 		}
@@ -2103,7 +2093,7 @@ parser_print_ast(FILE* out, Ast* ast) {
 			if (ast->abstract_type_decl.pointer)
 				parser_print_pointer(out, ast->abstract_type_decl.pointer);
 			if (ast->abstract_type_decl.direct_abstract_decl) {
-				parser_print_abstract_declarator(out, ast->abstract_type_decl.direct_abstract_decl);
+				parser_print_direct_abstract_declarator(out, ast->abstract_type_decl.direct_abstract_decl);
 			}
 		}break;
 		case AST_TYPE_DIRECT_ABSTRACT_DECLARATOR: {

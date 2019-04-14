@@ -1,5 +1,6 @@
 // Type declarations
-enum { FOO = 3 * 4, BAR, LEX }
+struct {int f : 4;}
+//enum { FOO = 3 * 4, BAR, LEX }
 //enum foo { FOO = 0, BAR, LEX }
 //struct foo{int x; struct bar{float f; short b;} a;}
 //union foo{int x; int y;}
