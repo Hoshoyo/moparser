@@ -420,6 +420,8 @@ parse_struct_declarator(Lexer* lexer) {
 	Parser_Result decl = {0};
 	Parser_Result const_expr = {0};
 
+	bool is_bitfield = false;
+
 	if(lexer_peek(lexer)->type != ':') {
 		decl = parse_abstract_declarator(lexer, true);
 		if(decl.status == PARSER_STATUS_FATAL)
@@ -427,6 +429,7 @@ parse_struct_declarator(Lexer* lexer) {
 	}
 
 	if(lexer_peek(lexer)->type == ':') {
+		is_bitfield = true;
 		lexer_next(lexer);
 		const_expr = parse_constant_expression(lexer);
 		if(const_expr.status == PARSER_STATUS_FATAL)
@@ -434,9 +437,14 @@ parse_struct_declarator(Lexer* lexer) {
 	}
 	
 	res.node = allocate_node();
-	res.node->kind = AST_TYPE_STRUCT_DECLARATOR_BITFIELD;
-	res.node->struct_declarator_bitfield.const_expr = const_expr.node;
-	res.node->struct_declarator_bitfield.declarator = decl.node;
+	if(is_bitfield) {
+		res.node->kind = AST_TYPE_STRUCT_DECLARATOR_BITFIELD;
+		res.node->struct_declarator_bitfield.const_expr = const_expr.node;
+		res.node->struct_declarator_bitfield.declarator = decl.node;
+	} else {
+		res.node->kind = AST_TYPE_STRUCT_DECLARATOR;
+		res.node->struct_declarator.declarator = decl.node;
+	}
 
 	return res;
 }
@@ -1066,9 +1074,15 @@ parse_unary_expression(Lexer* lexer) {
 			lexer_next(lexer);
 			Token* next = lexer_peek(lexer);
 			if(next->type == '(') {
+				lexer_next(lexer); // eat (
 				Parser_Result r = parse_type_name(lexer);
 				if(r.status == PARSER_STATUS_FATAL)
 					return r;
+				
+				Parser_Result n = require_token(lexer, ')');
+				if(n.status == PARSER_STATUS_FATAL)
+					return n;
+					
 				res.node = allocate_node();
 				res.node->kind = AST_EXPRESSION_SIZEOF;
 				res.node->expression_sizeof.is_type_name = true;
@@ -2028,6 +2042,15 @@ parser_print_ast(FILE* out, Ast* ast) {
 			parser_print_ast(out, ast->expression_binary.left);
 			fprintf(out, " || ");
 			parser_print_ast(out, ast->expression_binary.right);
+			fprintf(out, ")");
+		}break;
+		case AST_EXPRESSION_SIZEOF: {
+			fprintf(out, "sizeof (");
+			if(ast->expression_sizeof.is_type_name) {
+				parser_print_typename(out, ast->expression_sizeof.type);
+			} else {
+				parser_print_ast(out, ast->expression_sizeof.expr);
+			}
 			fprintf(out, ")");
 		}break;
 

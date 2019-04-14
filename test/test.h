@@ -1,5 +1,5 @@
 // Type declarations
-struct {int f : 4;}
+//struct {int f : 4;}
 //enum { FOO = 3 * 4, BAR, LEX }
 //enum foo { FOO = 0, BAR, LEX }
 //struct foo{int x; struct bar{float f; short b;} a;}
@@ -20,6 +20,7 @@ struct {int f : 4;}
 
 
 // Expressions
+sizeof(struct{int f; char p;})
 //(int*)b + c
 //a + ()b
 //a > b ? 1 : 2
