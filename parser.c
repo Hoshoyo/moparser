@@ -90,7 +90,8 @@ primitive_from_token(Token* t) {
 	return -1;
 }
 
-static Ast* parser_type_primitive_get_info(Type_Primitive p) {
+static Ast* 
+parser_type_primitive_get_info(Type_Primitive p) {
 	Ast* node = allocate_node();
 
 	node = allocate_node();
@@ -99,6 +100,65 @@ static Ast* parser_type_primitive_get_info(Type_Primitive p) {
 	node->specifier_qualifier.kind = p;
 
 	return node;
+}
+
+// enumerator:
+//     enumeration-constant
+//     enumeration-constant = constant-expression
+Parser_Result
+parse_enumerator(Lexer* lexer) {
+	Parser_Result res = {0};
+
+	Token* enum_const = lexer_next(lexer);
+	if(enum_const->type != TOKEN_IDENTIFIER) {
+		res.status = PARSER_STATUS_FATAL;
+		// TODO(psv): raise error
+		return res;
+	}
+	
+	Parser_Result const_expr = {0};
+	if(lexer_peek(lexer)->type == '=') {
+		lexer_next(lexer);
+		const_expr = parse_constant_expression(lexer);
+	}
+
+	res.node = allocate_node();
+	res.node->kind = AST_ENUMERATOR;
+	res.node->enumerator.const_expr = const_expr.node;
+	res.node->enumerator.enum_constant = enum_const;
+
+	return res;
+}
+
+// enumerator-list:
+//     enumerator
+//     enumerator-list , enumerator
+Parser_Result
+parse_enumerator_list(Lexer* lexer) {
+	Parser_Result res = {0};
+
+	Parser_Result enumerator = parse_enumerator(lexer);
+	if(enumerator.status == PARSER_STATUS_FATAL)
+		return res;
+	Ast_Enumerator* node = (Ast_Enumerator*)enumerator.node;
+
+	Ast_Enumerator** list = array_new(Ast*);
+	array_push(list, node);
+	
+	while(lexer_peek(lexer)->type == ',') {
+		lexer_next(lexer); // eat ,
+		Parser_Result e = parse_enumerator(lexer);
+		if(e.status == PARSER_STATUS_FATAL)
+			break;
+		Ast_Enumerator* en = (Ast_Enumerator*)e.node;
+		array_push(list, en);
+	}
+
+	res.node = allocate_node();
+	res.node->kind = AST_ENUMERATOR_LIST;
+	res.node->enumerator_list.list = (struct Ast_Enumerator**)list;
+
+	return res;
 }
 
 // type-specifier:
@@ -171,7 +231,7 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 			// 		struct-or-union identifier
 			Token* id = lexer_peek(lexer);
 			if(id->type == TOKEN_IDENTIFIER){
-				lexer_next(lexer);
+				lexer_next(lexer); // eat identifier
 			} else {
 				id = 0;
 			}
@@ -190,12 +250,42 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 				node->specifier_qualifier.struct_desc = decl_list.node;
 				node->specifier_qualifier.struct_name = id;
 			}
-
-			node->specifier_qualifier.kind = TYPE_STRUCT;
+			if(s_or_u->type == TOKEN_KEYWORD_STRUCT) {
+				node->specifier_qualifier.kind = TYPE_STRUCT;
+			} else if(s_or_u->type == TOKEN_KEYWORD_UNION) {
+				node->specifier_qualifier.kind = TYPE_UNION;
+			} else {
+				assert(0);
+				// TODO(psv): invalid code path
+			}
 		} break;
-		case TOKEN_KEYWORD_ENUM:  // enum
-			// TODO(psv): parse enum-specifier
-			break;
+		case TOKEN_KEYWORD_ENUM: {
+			// enum
+			lexer_next(lexer); // eat enum
+			Token* id = lexer_peek(lexer);
+			if(id->type == TOKEN_IDENTIFIER) {
+				lexer_next(lexer);
+			} else {
+				id = 0;
+			}
+			
+			Parser_Result enum_list = {0};
+			if(lexer_peek(lexer)->type == '{') {
+				lexer_next(lexer);
+				enum_list = parse_enumerator_list(lexer);
+				if(enum_list.status == PARSER_STATUS_FATAL)
+					return enum_list;
+				Parser_Result r = require_token(lexer, '}');
+				if(r.status == PARSER_STATUS_FATAL)
+					return r;
+			}
+
+			node = allocate_node();
+			node->kind = AST_TYPE_INFO;
+			node->specifier_qualifier.kind = TYPE_ENUM;
+			node->specifier_qualifier.enumerator_list = enum_list.node;
+			node->specifier_qualifier.enum_name = id;
+		} break;
 		case TOKEN_IDENTIFIER:{
 		    // typedef-name
 			if(is_type_name(s)) {
@@ -1709,6 +1799,26 @@ parser_print_struct_declaration(FILE* out, Ast* s) {
 }
 
 void
+parser_print_enumerator(FILE* out, Ast* e) {
+	assert(e->kind == AST_ENUMERATOR);
+	parser_print_token(out, e->enumerator.enum_constant);
+	fprintf(out, " ");
+	if(e->enumerator.const_expr) {
+		fprintf(out, " = ");
+		parser_print_ast(out, e->enumerator.const_expr);
+	}
+}
+
+void
+parser_print_enumerator_list(FILE* out, Ast* el) {
+	assert(el->kind == AST_ENUMERATOR_LIST);
+	for(u64 i = 0; i < array_length(el->enumerator_list.list); ++i) {
+		if(i > 0) fprintf(out, ", ");
+		parser_print_enumerator(out, (Ast*)el->enumerator_list.list[i]);
+	}
+}
+
+void
 parser_print_struct_description(FILE* out, Ast* sd) {
 	assert(sd->kind == AST_STRUCT_DECLARATION_LIST);
 	for(u64 i = 0; i < array_length(sd->struct_declaration_list.list); ++i) {
@@ -1744,17 +1854,35 @@ parser_print_specifiers_qualifiers(FILE* out, Ast* sq) {
 		}break;
 		case TYPE_STRUCT: {
 			fprintf(out, "struct ");
-			parser_print_token(out, sq->specifier_qualifier.struct_name);
-			fprintf(out, " { ");
-			parser_print_struct_description(out, sq->specifier_qualifier.struct_desc);
-			fprintf(out, " } ");
+			if(sq->specifier_qualifier.struct_name)
+				parser_print_token(out, sq->specifier_qualifier.struct_name);
+			if(sq->specifier_qualifier.struct_desc) {
+				fprintf(out, " { ");
+				parser_print_struct_description(out, sq->specifier_qualifier.struct_desc);
+				fprintf(out, " } ");
+			}
 		}break;
 		case TYPE_UNION: {
 			fprintf(out, "union ");
-			parser_print_struct_description(out, sq->specifier_qualifier.struct_desc);
+			if(sq->specifier_qualifier.struct_name)
+				parser_print_token(out, sq->specifier_qualifier.struct_name);
+			if(sq->specifier_qualifier.enumerator_list) {
+				fprintf(out, " { ");
+				parser_print_enumerator_list(out, sq->specifier_qualifier.enumerator_list);
+				fprintf(out, " } ");
+			}
 		}break;
 		case TYPE_ALIAS: {
 			parser_print_token(out, sq->specifier_qualifier.alias);
+		}break;
+		case TYPE_ENUM: {
+			fprintf(out, "enum ");
+			if(sq->specifier_qualifier.enum_name)
+				parser_print_token(out, sq->specifier_qualifier.enum_name);
+
+			fprintf(out, "{");
+			parser_print_enumerator_list(out, sq->specifier_qualifier.enumerator_list);
+			fprintf(out, "}");
 		}break;
 		default: fprintf(out, "<invalid type specifier or qualifier>"); break;
 	}

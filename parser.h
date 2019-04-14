@@ -9,6 +9,7 @@ typedef enum {
 	TYPE_PRIMITIVE,
 	TYPE_STRUCT,
 	TYPE_UNION,
+	TYPE_ENUM,
 	TYPE_ALIAS, // typedef
 } Type_Kind;
 
@@ -47,6 +48,10 @@ typedef struct {
 		struct {
 			struct Ast_t* struct_desc;
 			Token* struct_name;
+		};
+		struct {
+			struct Ast_t* enumerator_list;
+			Token* enum_name;
 		};
 	};
 } Ast_Specifier_Qualifier;
@@ -156,6 +161,9 @@ typedef enum {
 	AST_TYPE_STRUCT_DECLARATOR,
 	AST_TYPE_STRUCT_DECLARATOR_BITFIELD,
 	AST_TYPE_STRUCT_DECLARATOR_LIST,
+
+	AST_ENUMERATOR,
+	AST_ENUMERATOR_LIST,
 
 	// Params
 	AST_PARAMETER_LIST,
@@ -272,6 +280,15 @@ typedef struct {
 	struct Ast_t** list;
 } Ast_Struct_Declaration_List;
 
+typedef struct {
+	Token* enum_constant;
+	struct Ast_t* const_expr;
+} Ast_Enumerator;
+
+typedef struct {
+	struct Ast_Enumerator** list;
+} Ast_Enumerator_List;
+
 typedef struct Ast_t {
 	Node_Kind kind;
 	union {
@@ -296,6 +313,8 @@ typedef struct Ast_t {
 		Ast_Struct_Declarator_Bitfield struct_declarator_bitfield;
 		Ast_Struct_Declaration_List struct_declaration_list;
 		Ast_Struct_Declaration struct_declaration;
+		Ast_Enumerator enumerator;
+		Ast_Enumerator_List enumerator_list;
 	};
 } Ast;
 
@@ -334,5 +353,6 @@ Parser_Result parse_identifier(Lexer* lexer);
 Parser_Result parse_pointer(Lexer* lexer);
 Parser_Result parse_abstract_declarator(Lexer* lexer, bool require_name);
 Parser_Result parse_struct_declaration_list(Lexer* lexer);
+Parser_Result parse_constant_expression(Lexer* lexer);
 
 void parser_print_ast(FILE* out, Ast* ast);

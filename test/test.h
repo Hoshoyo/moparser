@@ -1,5 +1,9 @@
 // Type declarations
-struct foo{int x; int y;}
+enum { FOO = 3 * 4, BAR, LEX }
+//enum foo { FOO = 0, BAR, LEX }
+//struct foo{int x; struct bar{float f; short b;} a;}
+//union foo{int x; int y;}
+//struct foo{int x; int y;}
 //int (*)(int foo)
 //int (*(*)(int (*)(int, int), int))(int, int)
 //int(*)()[2]
