@@ -20,7 +20,7 @@ static char parser_error_buffer[1024];
 static bool
 is_type_name(Token* t) {
 	// TODO(psv): implement
-	return true;
+	return false;
 }
 
 static bool
@@ -152,20 +152,64 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 			node->specifier_qualifier.kind = TYPE_PRIMITIVE;
 		} break;
 
-		case TOKEN_KEYWORD_STRUCT:
-		case TOKEN_KEYWORD_UNION: // union
-			// TODO(psv): parse union-specifier
-			break;
+		case TOKEN_KEYWORD_UNION:
+		case TOKEN_KEYWORD_STRUCT: {
+			Token* s_or_u = lexer_next(lexer);
+			if(type) {
+				node = type;
+			} else {
+				node = allocate_node();
+				node->kind = AST_TYPE_INFO;
+			}
+			if(node->specifier_qualifier.kind != TYPE_NONE){
+				// TODO(psv): raise error, type specifier together with struct specifier
+				// (gcc): two or more data types in declaration specifiers
+				assert(0);
+			}
+			// struct-or-union-specifier:
+			// 		struct-or-union identifier_opt { struct-declaration-list }
+			// 		struct-or-union identifier
+			Token* id = lexer_peek(lexer);
+			if(id->type == TOKEN_IDENTIFIER){
+				lexer_next(lexer);
+			} else {
+				id = 0;
+			}
+			if(lexer_peek(lexer)->type == '{') {
+				lexer_next(lexer);
+
+				// struct-declaration-list
+				Parser_Result decl_list = parse_struct_declaration_list(lexer);
+				if(decl_list.status == PARSER_STATUS_FATAL)
+					return decl_list;
+
+				Parser_Result r = require_token(lexer, '}');
+				if(r.status == PARSER_STATUS_FATAL)
+					return r;
+
+				node->specifier_qualifier.struct_desc = decl_list.node;
+				node->specifier_qualifier.struct_name = id;
+			}
+
+			node->specifier_qualifier.kind = TYPE_STRUCT;
+		} break;
 		case TOKEN_KEYWORD_ENUM:  // enum
 			// TODO(psv): parse enum-specifier
 			break;
-		case TOKEN_IDENTIFIER:    // typedef-name
-			lexer_next(lexer);
-			node = allocate_node();
-			node->kind = AST_TYPE_INFO;
-			node->specifier_qualifier.kind = TYPE_ALIAS;
-			node->specifier_qualifier.alias = s;
-			break;
+		case TOKEN_IDENTIFIER:{
+		    // typedef-name
+			if(is_type_name(s)) {
+				lexer_next(lexer);
+				node = allocate_node();
+				node->kind = AST_TYPE_INFO;
+				node->specifier_qualifier.kind = TYPE_ALIAS;
+				node->specifier_qualifier.alias = s;
+			} else {
+				res.status = PARSER_STATUS_FATAL;
+				// TODO(psv): raise error
+				break;
+			}
+		} break;
 		default:
 			// TODO(psv): error message
 			res.status = PARSER_STATUS_FATAL;
@@ -271,13 +315,137 @@ parse_type_qualifier_list(Lexer* lexer) {
 	return res;
 }
 
-Parser_Result parse_abstract_declarator(Lexer* lexer);
-
 Parser_Result
 parse_constant_expression(Lexer* lexer) {
 	return parse_conditional_expression(lexer);
 }
 
+// struct-declarator:
+//     declarator
+//     type-specifier declarator_opt : constant-expression
+Parser_Result
+parse_struct_declarator(Lexer* lexer) {
+	Parser_Result res = {0};
+
+	Parser_Result type_spec = parse_type_specifier(lexer, 0);
+	if(type_spec.status == PARSER_STATUS_FATAL) {
+		Parser_Result r = parse_abstract_declarator(lexer, true);
+		if(r.status == PARSER_STATUS_FATAL)
+			return r;
+		
+		res.node = allocate_node();
+		res.node->kind = AST_TYPE_STRUCT_DECLARATOR;
+		res.node->struct_declarator.declarator = r.node;
+	} else {
+		Parser_Result decl = {0};
+		if(lexer_peek(lexer)->type != ':') {
+			decl = parse_abstract_declarator(lexer, true);
+			if(decl.status == PARSER_STATUS_FATAL)
+				return decl;
+		}
+		Parser_Result r = require_token(lexer, ':');
+		if(r.status == PARSER_STATUS_FATAL)
+			return r;
+		
+		Parser_Result const_expr = parse_constant_expression(lexer);
+		if(const_expr.status == PARSER_STATUS_FATAL)
+			return const_expr;
+		
+		res.node = allocate_node();
+		res.node->kind = AST_TYPE_STRUCT_DECLARATOR_BITFIELD;
+		res.node->struct_declarator_bitfield.const_expr = const_expr.node;
+		res.node->struct_declarator_bitfield.declarator = decl.node;
+		res.node->struct_declarator_bitfield.type_specifier = type_spec.node;
+	}
+	return res;
+}
+
+
+// struct-declarator-list:
+//     struct-declarator 
+//     struct-declarator-list , struct-declarator
+Parser_Result
+parse_struct_declarator_list(Lexer* lexer) {
+	Parser_Result res = {0};
+
+	Ast** list = 0;
+
+	while(true) {
+		Parser_Result r = parse_struct_declarator(lexer);
+		if(r.status == PARSER_STATUS_FATAL)
+			return r;
+
+		if(!list) list = array_new(Ast*);
+		array_push(list, r.node);
+
+		if(lexer_peek(lexer)->type != ',') break;
+	}
+
+	res.node = allocate_node();
+	res.node->kind = AST_TYPE_STRUCT_DECLARATOR_LIST;
+	res.node->struct_declarator_list.list = list;
+
+	return res;
+}
+
+Parser_Result
+parse_struct_declaration(Lexer* lexer) {
+	Parser_Result spec_qual = parse_specifier_qualifier_list(lexer);
+	if(spec_qual.status == PARSER_STATUS_FATAL)
+		return spec_qual;
+	Parser_Result struct_decl_list = parse_struct_declarator_list(lexer);
+	if(struct_decl_list.status == PARSER_STATUS_FATAL)
+		return struct_decl_list;
+	Parser_Result n = require_token(lexer, ';');
+	if(n.status == PARSER_STATUS_FATAL)
+		return n;
+	
+	Parser_Result res = {0};
+	res.node = allocate_node();
+	res.node->kind = AST_STRUCT_DECLARATION;
+	res.node->struct_declaration.spec_qual = spec_qual.node;
+	res.node->struct_declaration.struct_decl_list = struct_decl_list.node;
+
+	return res;
+}
+
+// struct-declaration-list:
+//     struct-declaration
+//     struct-declaration-list struct-declaration
+//
+// struct-declaration:
+//     specifier-qualifier-list struct-declarator-list ;
+Parser_Result
+parse_struct_declaration_list(Lexer* lexer) {
+
+	Parser_Result r = parse_struct_declaration(lexer);
+	if(r.status == PARSER_STATUS_FATAL)
+		return r;
+
+	Ast** list = array_new(Ast*);
+	array_push(list, r.node);
+
+	while(true) {
+		Parser_Result r = parse_struct_declaration(lexer);
+		if(r.status == PARSER_STATUS_FATAL) break;
+		array_push(list, r.node);
+	}
+	
+	Parser_Result res = {0};
+	res.node = allocate_node();
+	res.node->kind = AST_STRUCT_DECLARATION_LIST;
+	res.node->struct_declaration_list.list = list;
+
+	return res;
+}
+
+// storage-class-specifier:
+//     auto
+//     register
+//     static
+//     extern
+//     typedef
+//     __declspec ( extended-decl-modifier-seq ) /* Microsoft Specific */
 Storage_Class
 parse_storage_class_specifier(Lexer* lexer) {
 	Storage_Class res = STORAGE_CLASS_NONE;
@@ -350,82 +518,29 @@ parse_declaration_specifiers(Lexer* lexer) {
 //     direct-declarator [ constant-expression_opt ]
 //     direct-declarator ( parameter-type-list ) /* New-style declarator */
 //     direct-declarator ( identifier-list_opt ) /* Obsolete-style declarator */
-Parser_Result
-parse_direct_declarator(Lexer* lexer) {
-	Parser_Result res = {0};
-
-	Token* next = lexer_peek(lexer);
-
-	if(next->type == TOKEN_IDENTIFIER) {
-		res.node = allocate_node();
-		//res.node->kind = AST_DIRECT_DECLARATOR;
-	} else if(next->type == '(') {
-		res.node = allocate_node();
-		//res.node->kind = AST_DIRECT_DECLARATOR;
-		Parser_Result decl = parse_declarator(lexer);
-		// TODO(psv): use declarator
-		Parser_Result r = require_token(lexer, ')');
-		if(r.status == PARSER_STATUS_FATAL)
-			return r;
-	}
-
-	while(true) {
-		next = lexer_peek(lexer);
-		if(next->type == '[') {
-
-		} else if(next->type == '(') {
-
-		} else {
-			break;
-		}
-	}
-
-	//parse_parameter_type_list(lexer);
-
-	return res;
-}
 
 // declarator:
 //     pointer_opt direct-declarator
-Parser_Result
-parse_declarator(Lexer* lexer) {
-	Parser_Result res = {0};
-	Parser_Result ptr_opt = {0};
-
-	if(lexer_peek(lexer)->type == '*') {
-		ptr_opt = parse_pointer(lexer);
-	}
-
-	res = parse_direct_declarator(lexer);
-	if(res.status == PARSER_STATUS_FATAL)
-		return res;
-
-	Ast* node = allocate_node();
-	//node->kind == AST_DECLARATOR;
-	// TODO(psv): create declarator
-	res.node = node;
-
-	return res;
-}
 
 // parameter-declaration:
 //     declaration-specifiers declarator /* Named declarator */
 //     declaration-specifiers abstract-declarator_opt /* Anonymous declarator */
 Parser_Result
-parse_parameter_declaration(Lexer* lexer) {
+parse_parameter_declaration(Lexer* lexer, bool require_name) {
 	Parser_Result res = {0};
 
 	Parser_Result decl_spec = parse_declaration_specifiers(lexer);
 	if(decl_spec.status == PARSER_STATUS_FATAL)
 		return decl_spec;
 
-	Parser_Result declarator = parse_declarator(lexer);
+	Parser_Result declarator = parse_abstract_declarator(lexer, require_name);
 	if(res.status == PARSER_STATUS_FATAL)
 		return res;
 
 	res.node = allocate_node();
 	res.node->kind = AST_PARAMETER_DECLARATION;
 	res.node->parameter_decl.decl_specifiers = decl_spec.node;
+	res.node->parameter_decl.declarator = declarator.node;
 
 	return res;
 }
@@ -434,14 +549,14 @@ parse_parameter_declaration(Lexer* lexer) {
 //     parameter-declaration
 //     parameter-list , parameter-declaration
 Parser_Result
-parse_parameter_list(Lexer* lexer) {
+parse_parameter_list(Lexer* lexer, bool require_name) {
 	Parser_Result list = { 0 };
 
 	while (true) {
 		if(lexer_peek(lexer)->type == '.')
 			break;
 
-		Parser_Result res = parse_parameter_declaration(lexer);
+		Parser_Result res = parse_parameter_declaration(lexer, require_name);
 		if (res.status == PARSER_STATUS_FATAL)
 			break;
 
@@ -468,10 +583,10 @@ parse_parameter_list(Lexer* lexer) {
 //     parameter-list , ...
 // 
 Parser_Result
-parse_parameter_type_list(Lexer* lexer) {
+parse_parameter_type_list(Lexer* lexer, bool require_name) {
 	Parser_Result res = {0};
 
-	res = parse_parameter_list(lexer);
+	res = parse_parameter_list(lexer, require_name);
 	if (res.status == PARSER_STATUS_FATAL) {
 		return res;
 	}
@@ -502,12 +617,22 @@ parse_parameter_type_list(Lexer* lexer) {
 //     direct-abstract-declarator_opt [ constant-expression_opt ]
 //     direct-abstract-declarator_opt ( parameter-type-list_opt )
 Parser_Result
-parse_direct_abstract_declarator(Lexer* lexer) {
+parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
 	Parser_Result res = {0};
 	Ast* node = 0;
 
 	while (true) {
+		Token* name = 0;
 		Token* next = lexer_peek(lexer);
+		if (next->type == TOKEN_IDENTIFIER) {
+			name = lexer_next(lexer);
+		} else {
+			if(require_name) {
+				// TODO(psv): raise error here, name required
+				res.status = PARSER_STATUS_FATAL;
+				return res;
+			}
+		}
 		if (next->type == '[') {
 			// direct-abstract-declarator_opt is empty
 			lexer_next(lexer);
@@ -521,6 +646,8 @@ parse_direct_abstract_declarator(Lexer* lexer) {
 			new_node->kind = AST_TYPE_DIRECT_ABSTRACT_DECLARATOR;
 			new_node->direct_abstract_decl.type = DIRECT_ABSTRACT_DECL_ARRAY;
 			new_node->direct_abstract_decl.right_opt = const_expr.node;
+			new_node->direct_abstract_decl.name = name;
+
 			if (!node) {
 				node = new_node;
 			} else {
@@ -533,7 +660,7 @@ parse_direct_abstract_declarator(Lexer* lexer) {
 			next = lexer_peek(lexer);
 			if (next->type == '*' || next->type == '(' || next->type == '[') {
 				// it is another abstract-declarator
-				Parser_Result abst_decl = parse_abstract_declarator(lexer);
+				Parser_Result abst_decl = parse_abstract_declarator(lexer, false);
 				Parser_Result r = require_token(lexer, ')');
 				if (r.status == PARSER_STATUS_FATAL) {
 					// TODO(psv): raise error
@@ -545,6 +672,7 @@ parse_direct_abstract_declarator(Lexer* lexer) {
 				new_node->direct_abstract_decl.left_opt = abst_decl.node;
 				new_node->direct_abstract_decl.right_opt = 0;
 				new_node->direct_abstract_decl.type = DIRECT_ABSTRACT_DECL_NONE;
+				new_node->direct_abstract_decl.name = name;
 
 				if (!node) {
 					node = new_node;
@@ -554,7 +682,7 @@ parse_direct_abstract_declarator(Lexer* lexer) {
 				}
 			} else {
 				// it is a parameter-type-list_opt
-				Parser_Result params = parse_parameter_type_list(lexer);
+				Parser_Result params = parse_parameter_type_list(lexer, false);
 				Parser_Result r = require_token(lexer, ')'); // end of parameter list
 				if (r.status == PARSER_STATUS_FATAL) {
 					// TODO(psv): raise error
@@ -565,6 +693,8 @@ parse_direct_abstract_declarator(Lexer* lexer) {
 				new_node->kind = AST_TYPE_DIRECT_ABSTRACT_DECLARATOR;
 				new_node->direct_abstract_decl.type = DIRECT_ABSTRACT_DECL_FUNCTION;
 				new_node->direct_abstract_decl.right_opt = params.node;
+				new_node->direct_abstract_decl.name = name;
+
 				if (!node) {
 					node = new_node;
 				} else {
@@ -573,6 +703,12 @@ parse_direct_abstract_declarator(Lexer* lexer) {
 				}
 			}
 		} else {
+			if(name) {
+				node = allocate_node();
+				node->kind = AST_TYPE_DIRECT_ABSTRACT_DECLARATOR;
+				node->direct_abstract_decl.name = name;
+				node->direct_abstract_decl.type = DIRECT_ABSTRACT_DECL_NAME;
+			}
 			break;
 		}
 	}
@@ -613,7 +749,7 @@ parse_pointer(Lexer* lexer) {
 //    pointer
 //    pointer_opt direct-abstract-declarator
 Parser_Result
-parse_abstract_declarator(Lexer* lexer) {
+parse_abstract_declarator(Lexer* lexer, bool require_name) {
 	Parser_Result res = {0};
 
 	if(lexer_peek(lexer)->type == '*') {
@@ -621,7 +757,7 @@ parse_abstract_declarator(Lexer* lexer) {
 	}
 
 	// direct-abstract-declarator
-	Parser_Result dabstd = parse_direct_abstract_declarator(lexer);
+	Parser_Result dabstd = parse_direct_abstract_declarator(lexer, require_name);
 	if (dabstd.status == PARSER_STATUS_FATAL)
 		return dabstd;
 
@@ -643,7 +779,7 @@ parse_type_name(Lexer* lexer) {
 	if(spec_qual.status == PARSER_STATUS_FATAL)
 		return spec_qual;
 	
-	Parser_Result abst_decl = parse_abstract_declarator(lexer);
+	Parser_Result abst_decl = parse_abstract_declarator(lexer, false);
 	if(abst_decl.status == PARSER_STATUS_FATAL)
 		return abst_decl;
 
@@ -846,7 +982,25 @@ parse_unary_expression(Lexer* lexer) {
 		} break;
 
 		case TOKEN_KEYWORD_SIZEOF: {
-			// TODO(psv):
+			lexer_next(lexer);
+			Token* next = lexer_peek(lexer);
+			if(next->type == '(') {
+				Parser_Result r = parse_type_name(lexer);
+				if(r.status == PARSER_STATUS_FATAL)
+					return r;
+				res.node = allocate_node();
+				res.node->kind = AST_EXPRESSION_SIZEOF;
+				res.node->expression_sizeof.is_type_name = true;
+				res.node->expression_sizeof.type = r.node;
+			} else {
+				Parser_Result r = parse_unary_expression(lexer);
+				if(r.status == PARSER_STATUS_FATAL)
+					return r;
+				res.node = allocate_node();
+				res.node->kind = AST_EXPRESSION_SIZEOF;
+				res.node->expression_sizeof.is_type_name = false;
+				res.node->expression_sizeof.expr;
+			}
 		}break;
 		default:
 			res = parse_postfix_expression(lexer);
@@ -1444,10 +1598,8 @@ parser_print_pointer(FILE* out, Ast* pointer) {
 void
 parser_print_param_decl(FILE* out, Ast* decl) {
 	assert(decl->kind == AST_PARAMETER_DECLARATION);
-	//decl->parameter_decl.decl_specifiers
-	// @TODO
-	//decl->parameter_decl.decl_specifiers
 	parser_print_specifiers_qualifiers(out, decl->parameter_decl.decl_specifiers);
+	parser_print_abstract_declarator(out, decl->parameter_decl.declarator);
 }
 
 void
@@ -1488,6 +1640,9 @@ parser_print_direct_abstract_declarator(FILE* out, Ast* ast) {
 			}
 			fprintf(out, "]");
 		} break;
+		case DIRECT_ABSTRACT_DECL_NAME: {
+			parser_print_token(out, ast->direct_abstract_decl.name);
+		} break;
 		default: fprintf(out, "<invalid direct abstract declarator>"); break;
 	}
 }
@@ -1499,6 +1654,66 @@ parser_print_abstract_declarator(FILE* out, Ast* a) {
 	}
 	if (a->abstract_type_decl.direct_abstract_decl) {
 		parser_print_direct_abstract_declarator(out, a->abstract_type_decl.direct_abstract_decl);
+	}
+}
+
+void parser_print_struct_declaration(FILE* out, Ast* s);
+
+void
+parser_print_struct_declaration_list(FILE* out, Ast* l) {
+	for(u64 i = 0; i < array_length(l->struct_declaration_list.list); ++i) {
+		if(i > 0) fprintf(out, "\n");
+		parser_print_struct_declaration(out, l->struct_declaration_list.list[i]);
+	}
+}
+
+void
+parser_print_struct_declarator(FILE* out, Ast* d) {
+	assert(d->kind == AST_TYPE_STRUCT_DECLARATOR);
+	parser_print_abstract_declarator(out, d->struct_declarator.declarator);
+}
+
+void
+parser_print_struct_declarator_bitfield(FILE* out, Ast* d) {
+	assert(d->kind == AST_TYPE_STRUCT_DECLARATOR_BITFIELD);
+	parser_print_ast(out, d->struct_declarator_bitfield.type_specifier);
+	fprintf(out, " ");
+	if(d->struct_declarator_bitfield.declarator) {
+		parser_print_ast(out, d->struct_declarator_bitfield.declarator);
+	}
+	fprintf(out, " : ");
+	parser_print_ast(out, d->struct_declarator_bitfield.const_expr);
+}
+
+void
+parser_print_struct_declarator_list(FILE* out, Ast* d) {
+	assert(d->kind == AST_TYPE_STRUCT_DECLARATOR_LIST);
+	for(u64 i = 0; i < array_length(d->struct_declarator_list.list); ++i) {
+		if(i > 0) fprintf(out, ", ");
+		Node_Kind kind = d->struct_declarator_list.list[i]->kind;
+		if(kind == AST_TYPE_STRUCT_DECLARATOR){
+			parser_print_struct_declarator(out, d->struct_declarator_list.list[i]);
+		} else if(kind == AST_TYPE_STRUCT_DECLARATOR_BITFIELD) {
+			parser_print_struct_declarator_bitfield(out, d->struct_declaration_list.list[i]);
+		}
+	}
+}
+
+void
+parser_print_struct_declaration(FILE* out, Ast* s) {
+	assert(s->kind == AST_STRUCT_DECLARATION);
+	parser_print_specifiers_qualifiers(out, s->struct_declaration.spec_qual);
+	fprintf(out, " ");
+	parser_print_struct_declarator_list(out, s->struct_declaration.struct_decl_list);
+	fprintf(out, ";");
+}
+
+void
+parser_print_struct_description(FILE* out, Ast* sd) {
+	assert(sd->kind == AST_STRUCT_DECLARATION_LIST);
+	for(u64 i = 0; i < array_length(sd->struct_declaration_list.list); ++i) {
+		if(i > 0) fprintf(out, " ");
+		parser_print_struct_declaration(out, sd->struct_declaration_list.list[i]);
 	}
 }
 
@@ -1528,10 +1743,15 @@ parser_print_specifiers_qualifiers(FILE* out, Ast* sq) {
 			}
 		}break;
 		case TYPE_STRUCT: {
-			// TODO(psv):
+			fprintf(out, "struct ");
+			parser_print_token(out, sq->specifier_qualifier.struct_name);
+			fprintf(out, " { ");
+			parser_print_struct_description(out, sq->specifier_qualifier.struct_desc);
+			fprintf(out, " } ");
 		}break;
 		case TYPE_UNION: {
-			// TODO(psv):
+			fprintf(out, "union ");
+			parser_print_struct_description(out, sq->specifier_qualifier.struct_desc);
 		}break;
 		case TYPE_ALIAS: {
 			parser_print_token(out, sq->specifier_qualifier.alias);

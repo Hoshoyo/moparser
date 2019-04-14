@@ -1,5 +1,7 @@
 // Type declarations
-int (*(*)(int (*)(int, int), int))(int, int)
+struct foo{int x; int y;}
+//int (*)(int foo)
+//int (*(*)(int (*)(int, int), int))(int, int)
 //int(*)()[2]
 //int[512][321]
 //int(*)(const static int unsigned, int, ...)

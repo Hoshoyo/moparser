@@ -1,0 +1,27 @@
+
+// type specifier list
+int
+// direct-abstract-declarator = ( abstract-declarator )
+(
+    // abstract-declarator
+    // pointer_opt
+    *
+    // direct-abstract-declarator = ( abstract-declarator )
+    (   
+        * // pointer
+    )
+    // ( parameter-type-list_opt )
+    (
+        // parameter-type-list
+        int (*)(int, int), int
+    ) 
+)
+(
+    // parameter-type-list
+    int, int
+)
+
+
+ int  (*(*)(int (*)(int, int), int))(int, int)
+|   | |
+TSQL

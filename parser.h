@@ -44,6 +44,10 @@ typedef struct {
 	union {
 		Type_Primitive primitive[8];
 		Token* alias;
+		struct {
+			struct Ast_t* struct_desc;
+			Token* struct_name;
+		};
 	};
 } Ast_Specifier_Qualifier;
 
@@ -69,6 +73,7 @@ typedef enum {
 
 typedef enum {
 	DIRECT_ABSTRACT_DECL_NONE = 0,
+	DIRECT_ABSTRACT_DECL_NAME,
 	DIRECT_ABSTRACT_DECL_ARRAY,
 	DIRECT_ABSTRACT_DECL_FUNCTION,
 } Direct_Abstract_Decl_Type;
@@ -128,6 +133,7 @@ typedef enum {
 	AST_EXPRESSION_POSTFIX_UNARY,
 	AST_EXPRESSION_POSTFIX_BINARY,
 	AST_EXPRESSION_TERNARY,
+	AST_EXPRESSION_SIZEOF,
 
 	AST_CONSTANT_FLOATING_POINT,
 	AST_CONSTANT_INTEGER,
@@ -147,10 +153,18 @@ typedef enum {
 	AST_TYPE_POINTER,
 	AST_TYPE_ABSTRACT_DECLARATOR,
 	AST_TYPE_DIRECT_ABSTRACT_DECLARATOR,
+	AST_TYPE_STRUCT_DECLARATOR,
+	AST_TYPE_STRUCT_DECLARATOR_BITFIELD,
+	AST_TYPE_STRUCT_DECLARATOR_LIST,
 
 	// Params
 	AST_PARAMETER_LIST,
 	AST_PARAMETER_DECLARATION,
+	AST_DIRECT_DECLARATOR,
+
+	// Declaration
+	AST_STRUCT_DECLARATION,
+	AST_STRUCT_DECLARATION_LIST,
 } Node_Kind;
 
 typedef struct {
@@ -212,6 +226,7 @@ typedef struct {
 
 typedef struct {
 	Direct_Abstract_Decl_Type type;
+	Token* name; // optional
 	struct Ast_t* left_opt;
 	struct Ast_t* right_opt;
 } Ast_Direct_Abstract_Declarator;
@@ -223,8 +238,39 @@ typedef struct {
 
 typedef struct {
 	struct Ast_t* decl_specifiers;
-	// TODO:
+	struct Ast_t* declarator;
 } Ast_Parameter_Declaration;
+
+typedef struct {
+	bool is_type_name;
+	union {
+		struct Ast_t* type;
+		struct Ast_t* expr;
+	};
+} Ast_Expression_Sizeof;
+
+typedef struct {
+	struct Ast_t* declarator;
+} Ast_Struct_Declarator;
+
+typedef struct {
+	struct Ast_t* type_specifier;
+	struct Ast_t* declarator;
+	struct Ast_t* const_expr;
+} Ast_Struct_Declarator_Bitfield;
+
+typedef struct {
+	struct Ast_t** list;
+} Ast_Type_Struct_Declarator_List;
+
+typedef struct {
+	struct Ast_t* spec_qual;
+	struct Ast_t* struct_decl_list;
+} Ast_Struct_Declaration;
+
+typedef struct {
+	struct Ast_t** list;
+} Ast_Struct_Declaration_List;
 
 typedef struct Ast_t {
 	Node_Kind kind;
@@ -237,6 +283,7 @@ typedef struct Ast_t {
 		Ast_Expression_Postfix_Binary expression_postfix_binary;
 		Ast_Expression_Argument_List expression_argument_list;
 		Ast_Expression_Ternary expression_ternary;
+		Ast_Expression_Sizeof expression_sizeof;
 		Ast_Specifier_Qualifier specifier_qualifier;
 		Ast_Type_Name type_name;
 		Ast_Type_Pointer pointer;
@@ -244,6 +291,11 @@ typedef struct Ast_t {
 		Ast_Direct_Abstract_Declarator direct_abstract_decl;
 		Ast_Parameter_List parameter_list;
 		Ast_Parameter_Declaration parameter_decl;
+		Ast_Struct_Declarator struct_declarator;
+		Ast_Type_Struct_Declarator_List struct_declarator_list;
+		Ast_Struct_Declarator_Bitfield struct_declarator_bitfield;
+		Ast_Struct_Declaration_List struct_declaration_list;
+		Ast_Struct_Declaration struct_declaration;
 	};
 } Ast;
 
@@ -279,5 +331,8 @@ Parser_Result parse_primary_expression(Lexer* lexer);
 Parser_Result parse_expression(Lexer* lexer);
 Parser_Result parse_constant(Lexer* lexer);
 Parser_Result parse_identifier(Lexer* lexer);
+Parser_Result parse_pointer(Lexer* lexer);
+Parser_Result parse_abstract_declarator(Lexer* lexer, bool require_name);
+Parser_Result parse_struct_declaration_list(Lexer* lexer);
 
 void parser_print_ast(FILE* out, Ast* ast);
