@@ -1,10 +1,13 @@
 #define _CRT_SECURE_NO_WARNINGS
-#include "parser.h"
+#include "common.h"
 #include "light_array.h"
 #include <stdlib.h>
 #include <assert.h>
+#include "moparser.h"
 
 #include "lexer.c"
+
+void parser_print_ast(FILE* out, MO_Ast* ast);
 
 MO_Parser_Result parse_type_name(Lexer* lexer);
 MO_Parser_Result parse_postfix_expression(Lexer* lexer);
@@ -58,11 +61,11 @@ is_assignment_operator(Token* t) {
 
 static void*
 allocate_node() {
-	return calloc(1, sizeof(Ast));
+	return calloc(1, sizeof(MO_Ast));
 }
 
 static void
-free_node(Ast* node) {
+free_node(MO_Ast* node) {
 	free(node);
 }
 
@@ -92,25 +95,25 @@ require_token(Lexer* lexer, MO_Token_Type tt) {
 //     struct-or-union identifier_opt { struct-declaration-list }
 //     struct-or-union identifier
 
-Type_Primitive
+MO_Type_Primitive
 primitive_from_token(Token* t) {
 	switch (t->type) {
 		case MO_TOKEN_KEYWORD_UNSIGNED:
-			return TYPE_PRIMITIVE_UNSIGNED;
+			return MO_TYPE_PRIMITIVE_UNSIGNED;
 		case MO_TOKEN_KEYWORD_SIGNED:
-			return TYPE_PRIMITIVE_SIGNED;
+			return MO_TYPE_PRIMITIVE_SIGNED;
 		case MO_TOKEN_KEYWORD_DOUBLE:
-			return TYPE_PRIMITIVE_DOUBLE;
+			return MO_TYPE_PRIMITIVE_DOUBLE;
 		case MO_TOKEN_KEYWORD_FLOAT:
-			return TYPE_PRIMITIVE_FLOAT;
+			return MO_TYPE_PRIMITIVE_FLOAT;
 		case MO_TOKEN_KEYWORD_LONG:
-			return TYPE_PRIMITIVE_LONG;
+			return MO_TYPE_PRIMITIVE_LONG;
 		case MO_TOKEN_KEYWORD_INT:
-			return TYPE_PRIMITIVE_INT;
+			return MO_TYPE_PRIMITIVE_INT;
 		case MO_TOKEN_KEYWORD_SHORT:
-			return TYPE_PRIMITIVE_SHORT;
+			return MO_TYPE_PRIMITIVE_SHORT;
 		case MO_TOKEN_KEYWORD_CHAR: 
-			return TYPE_PRIMITIVE_CHAR;
+			return MO_TYPE_PRIMITIVE_CHAR;
 		default:
 			assert(0); // Invalid code path
 			break;
@@ -118,12 +121,12 @@ primitive_from_token(Token* t) {
 	return -1;
 }
 
-static Ast* 
-parser_type_primitive_get_info(Type_Primitive p) {
-	Ast* node = allocate_node();
+static MO_Ast* 
+parser_type_primitive_get_info(MO_Type_Primitive p) {
+	MO_Ast* node = allocate_node();
 
 	node = allocate_node();
-	node->kind = AST_TYPE_INFO;
+	node->kind = MO_AST_TYPE_INFO;
 	node->specifier_qualifier.primitive[p] = 1;
 	node->specifier_qualifier.kind = p;
 
@@ -151,7 +154,7 @@ parse_enumerator(Lexer* lexer) {
 	}
 
 	res.node = allocate_node();
-	res.node->kind = AST_ENUMERATOR;
+	res.node->kind = MO_AST_ENUMERATOR;
 	res.node->enumerator.const_expr = const_expr.node;
 	res.node->enumerator.enum_constant = enum_const;
 
@@ -168,9 +171,9 @@ parse_enumerator_list(Lexer* lexer) {
 	MO_Parser_Result enumerator = parse_enumerator(lexer);
 	if(enumerator.status == MO_PARSER_STATUS_FATAL)
 		return res;
-	Ast_Enumerator* node = (Ast_Enumerator*)enumerator.node;
+	MO_Ast_Enumerator* node = (MO_Ast_Enumerator*)enumerator.node;
 
-	Ast_Enumerator** list = array_new(Ast*);
+	MO_Ast_Enumerator** list = array_new(MO_Ast*);
 	array_push(list, node);
 	
 	while(lexer_peek(lexer)->type == ',') {
@@ -178,13 +181,13 @@ parse_enumerator_list(Lexer* lexer) {
 		MO_Parser_Result e = parse_enumerator(lexer);
 		if(e.status == MO_PARSER_STATUS_FATAL)
 			break;
-		Ast_Enumerator* en = (Ast_Enumerator*)e.node;
+		MO_Ast_Enumerator* en = (MO_Ast_Enumerator*)e.node;
 		array_push(list, en);
 	}
 
 	res.node = allocate_node();
-	res.node->kind = AST_ENUMERATOR_LIST;
-	res.node->enumerator_list.list = (struct Ast_Enumerator**)list;
+	res.node->kind = MO_AST_ENUMERATOR_LIST;
+	res.node->enumerator_list.list = (struct MO_Ast_Enumerator**)list;
 
 	return res;
 }
@@ -203,19 +206,19 @@ parse_enumerator_list(Lexer* lexer) {
 //     enum-specifier
 //     typedef-name
 MO_Parser_Result
-parse_type_specifier(Lexer* lexer, Ast* type) {
+parse_type_specifier(Lexer* lexer, MO_Ast* type) {
 	MO_Parser_Result res = {0};
 	Token* s = lexer_peek(lexer);
-	Ast* node = 0;
+	MO_Ast* node = 0;
 
-	assert((type) ? type->kind == AST_TYPE_INFO : true);
+	assert((type) ? type->kind == MO_AST_TYPE_INFO : true);
 
 	switch(s->type) {
 		case MO_TOKEN_KEYWORD_VOID:
 			lexer_next(lexer);
 			node = allocate_node();
-			node->kind = AST_TYPE_INFO;
-			node->specifier_qualifier.kind = TYPE_VOID;
+			node->kind = MO_AST_TYPE_INFO;
+			node->specifier_qualifier.kind = MO_TYPE_VOID;
 			break;
 
 		case MO_TOKEN_KEYWORD_UNSIGNED:
@@ -227,17 +230,17 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 		case MO_TOKEN_KEYWORD_SHORT:
 		case MO_TOKEN_KEYWORD_CHAR: {
 			lexer_next(lexer);
-			Type_Primitive primitive = primitive_from_token(s);
+			MO_Type_Primitive primitive = primitive_from_token(s);
 			assert(primitive != -1);
 			if (type) {
 				node = type;
 				node->specifier_qualifier.primitive[primitive]++;
 			} else {
 				node = allocate_node();
-				node->kind = AST_TYPE_INFO;
+				node->kind = MO_AST_TYPE_INFO;
 				node->specifier_qualifier.primitive[primitive] = 1;
 			}
-			node->specifier_qualifier.kind = TYPE_PRIMITIVE;
+			node->specifier_qualifier.kind = MO_TYPE_PRIMITIVE;
 		} break;
 
 		case MO_TOKEN_KEYWORD_UNION:
@@ -247,9 +250,9 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 				node = type;
 			} else {
 				node = allocate_node();
-				node->kind = AST_TYPE_INFO;
+				node->kind = MO_AST_TYPE_INFO;
 			}
-			if(node->specifier_qualifier.kind != TYPE_NONE){
+			if(node->specifier_qualifier.kind != MO_TYPE_NONE){
 				// TODO(psv): raise error, type specifier together with struct specifier
 				// (gcc): two or more data types in declaration specifiers
 				assert(0);
@@ -279,9 +282,9 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 				node->specifier_qualifier.struct_name = id;
 			}
 			if(s_or_u->type == MO_TOKEN_KEYWORD_STRUCT) {
-				node->specifier_qualifier.kind = TYPE_STRUCT;
+				node->specifier_qualifier.kind = MO_TYPE_STRUCT;
 			} else if(s_or_u->type == MO_TOKEN_KEYWORD_UNION) {
-				node->specifier_qualifier.kind = TYPE_UNION;
+				node->specifier_qualifier.kind = MO_TYPE_UNION;
 			} else {
 				assert(0);
 				// TODO(psv): invalid code path
@@ -309,8 +312,8 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 			}
 
 			node = allocate_node();
-			node->kind = AST_TYPE_INFO;
-			node->specifier_qualifier.kind = TYPE_ENUM;
+			node->kind = MO_AST_TYPE_INFO;
+			node->specifier_qualifier.kind = MO_TYPE_ENUM;
 			node->specifier_qualifier.enumerator_list = enum_list.node;
 			node->specifier_qualifier.enum_name = id;
 		} break;
@@ -319,8 +322,8 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 			if(is_type_name(s)) {
 				lexer_next(lexer);
 				node = allocate_node();
-				node->kind = AST_TYPE_INFO;
-				node->specifier_qualifier.kind = TYPE_ALIAS;
+				node->kind = MO_AST_TYPE_INFO;
+				node->specifier_qualifier.kind = MO_TYPE_ALIAS;
 				node->specifier_qualifier.alias = s;
 			} else {
 				res.status = MO_PARSER_STATUS_FATAL;
@@ -343,7 +346,7 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 //     const
 //     volatile
 MO_Parser_Result
-parse_type_qualifier(Lexer* lexer, Ast* type) {
+parse_type_qualifier(Lexer* lexer, MO_Ast* type) {
 	MO_Parser_Result res = {0};
 	Token* q = lexer_peek(lexer);
 
@@ -351,26 +354,26 @@ parse_type_qualifier(Lexer* lexer, Ast* type) {
 		case MO_TOKEN_KEYWORD_CONST: {
 			lexer_next(lexer);
 			if(type) {
-				type->specifier_qualifier.qualifiers |= TYPE_QUALIFIER_CONST;
+				type->specifier_qualifier.qualifiers |= MO_TYPE_QUALIFIER_CONST;
 				res.node = type;
 			} else {
-				Ast* node = allocate_node();
-				node->kind = AST_TYPE_INFO;
-				node->specifier_qualifier.kind = TYPE_NONE;
-				node->specifier_qualifier.qualifiers = TYPE_QUALIFIER_CONST;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_TYPE_INFO;
+				node->specifier_qualifier.kind = MO_TYPE_NONE;
+				node->specifier_qualifier.qualifiers = MO_TYPE_QUALIFIER_CONST;
 				res.node = node;
 			}
 		} break;
 		case MO_TOKEN_KEYWORD_VOLATILE: {
 			lexer_next(lexer);
 			if(type) {
-				type->specifier_qualifier.qualifiers |= TYPE_QUALIFIER_VOLATILE;
+				type->specifier_qualifier.qualifiers |= MO_TYPE_QUALIFIER_VOLATILE;
 				res.node = type;
 			} else {
-				Ast* node = allocate_node();
-				node->kind = AST_TYPE_INFO;
-				node->specifier_qualifier.kind = TYPE_NONE;
-				node->specifier_qualifier.qualifiers = TYPE_QUALIFIER_VOLATILE;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_TYPE_INFO;
+				node->specifier_qualifier.kind = MO_TYPE_NONE;
+				node->specifier_qualifier.qualifiers = MO_TYPE_QUALIFIER_VOLATILE;
 				res.node = node;
 			}
 		} break;
@@ -466,11 +469,11 @@ parse_struct_declarator(Lexer* lexer) {
 	
 	res.node = allocate_node();
 	if(is_bitfield) {
-		res.node->kind = AST_TYPE_STRUCT_DECLARATOR_BITFIELD;
+		res.node->kind = MO_AST_TYPE_STRUCT_DECLARATOR_BITFIELD;
 		res.node->struct_declarator_bitfield.const_expr = const_expr.node;
 		res.node->struct_declarator_bitfield.declarator = decl.node;
 	} else {
-		res.node->kind = AST_TYPE_STRUCT_DECLARATOR;
+		res.node->kind = MO_AST_TYPE_STRUCT_DECLARATOR;
 		res.node->struct_declarator.declarator = decl.node;
 	}
 
@@ -485,21 +488,21 @@ MO_Parser_Result
 parse_struct_declarator_list(Lexer* lexer) {
 	MO_Parser_Result res = {0};
 
-	Ast** list = 0;
+	MO_Ast** list = 0;
 
 	while(true) {
 		MO_Parser_Result r = parse_struct_declarator(lexer);
 		if(r.status == MO_PARSER_STATUS_FATAL)
 			return r;
 
-		if(!list) list = array_new(Ast*);
+		if(!list) list = array_new(MO_Ast*);
 		array_push(list, r.node);
 
 		if(lexer_peek(lexer)->type != ',') break;
 	}
 
 	res.node = allocate_node();
-	res.node->kind = AST_TYPE_STRUCT_DECLARATOR_LIST;
+	res.node->kind = MO_AST_TYPE_STRUCT_DECLARATOR_LIST;
 	res.node->struct_declarator_list.list = list;
 
 	return res;
@@ -519,7 +522,7 @@ parse_struct_declaration(Lexer* lexer) {
 	
 	MO_Parser_Result res = {0};
 	res.node = allocate_node();
-	res.node->kind = AST_STRUCT_DECLARATION;
+	res.node->kind = MO_AST_STRUCT_DECLARATION;
 	res.node->struct_declaration.spec_qual = spec_qual.node;
 	res.node->struct_declaration.struct_decl_list = struct_decl_list.node;
 
@@ -539,7 +542,7 @@ parse_struct_declaration_list(Lexer* lexer) {
 	if(r.status == MO_PARSER_STATUS_FATAL)
 		return r;
 
-	Ast** list = array_new(Ast*);
+	MO_Ast** list = array_new(MO_Ast*);
 	array_push(list, r.node);
 
 	while(true) {
@@ -550,7 +553,7 @@ parse_struct_declaration_list(Lexer* lexer) {
 	
 	MO_Parser_Result res = {0};
 	res.node = allocate_node();
-	res.node->kind = AST_STRUCT_DECLARATION_LIST;
+	res.node->kind = MO_AST_STRUCT_DECLARATION_LIST;
 	res.node->struct_declaration_list.list = list;
 
 	return res;
@@ -593,7 +596,7 @@ MO_Parser_Result
 parse_declaration_specifiers(Lexer* lexer) {
 	MO_Parser_Result res = {0};
 
-	Ast* type = 0;
+	MO_Ast* type = 0;
 	Storage_Class sc = 0;
 
 	while(true) {
@@ -617,10 +620,10 @@ parse_declaration_specifiers(Lexer* lexer) {
 	}
 
 	if(!type){
-		type = parser_type_primitive_get_info(TYPE_PRIMITIVE_INT);
-	} else if(type->specifier_qualifier.kind == TYPE_NONE) {
-		type->specifier_qualifier.kind = TYPE_PRIMITIVE;
-		type->specifier_qualifier.primitive[TYPE_PRIMITIVE_INT] = 1;
+		type = parser_type_primitive_get_info(MO_TYPE_PRIMITIVE_INT);
+	} else if(type->specifier_qualifier.kind == MO_TYPE_NONE) {
+		type->specifier_qualifier.kind = MO_TYPE_PRIMITIVE;
+		type->specifier_qualifier.primitive[MO_TYPE_PRIMITIVE_INT] = 1;
 	}
 	type->specifier_qualifier.storage_class = sc;
 
@@ -655,7 +658,7 @@ parse_parameter_declaration(Lexer* lexer, bool require_name) {
 		return res;
 
 	res.node = allocate_node();
-	res.node->kind = AST_PARAMETER_DECLARATION;
+	res.node->kind = MO_AST_PARAMETER_DECLARATION;
 	res.node->parameter_decl.decl_specifiers = decl_spec.node;
 	res.node->parameter_decl.declarator = declarator.node;
 
@@ -679,7 +682,7 @@ parse_parameter_list(Lexer* lexer, bool require_name) {
 
 		if (!list.node) {
 			list.node = allocate_node();
-			list.node->kind = AST_PARAMETER_LIST;
+			list.node->kind = MO_AST_PARAMETER_LIST;
 			list.node->parameter_list.param_decl = array_new(struct Ast_t*);
 			list.node->parameter_list.is_vararg = false;
 		}
@@ -736,7 +739,7 @@ parse_parameter_type_list(Lexer* lexer, bool require_name) {
 MO_Parser_Result
 parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
 	MO_Parser_Result res = {0};
-	Ast* node = 0;
+	MO_Ast* node = 0;
 
 	while (true) {
 		Token* name = 0;
@@ -759,9 +762,9 @@ parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
 				// TODO(psv): raise error
 				return cbracket;
 			}
-			Ast* new_node = allocate_node();
-			new_node->kind = AST_TYPE_DIRECT_ABSTRACT_DECLARATOR;
-			new_node->direct_abstract_decl.type = DIRECT_ABSTRACT_DECL_ARRAY;
+			MO_Ast* new_node = allocate_node();
+			new_node->kind = MO_AST_TYPE_DIRECT_ABSTRACT_DECLARATOR;
+			new_node->direct_abstract_decl.type = MO_DIRECT_ABSTRACT_DECL_ARRAY;
 			new_node->direct_abstract_decl.right_opt = const_expr.node;
 			new_node->direct_abstract_decl.name = name;
 
@@ -784,11 +787,11 @@ parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
 					return r;
 				}
 
-				Ast* new_node = allocate_node();
-				new_node->kind = AST_TYPE_DIRECT_ABSTRACT_DECLARATOR;
+				MO_Ast* new_node = allocate_node();
+				new_node->kind = MO_AST_TYPE_DIRECT_ABSTRACT_DECLARATOR;
 				new_node->direct_abstract_decl.left_opt = abst_decl.node;
 				new_node->direct_abstract_decl.right_opt = 0;
-				new_node->direct_abstract_decl.type = DIRECT_ABSTRACT_DECL_NONE;
+				new_node->direct_abstract_decl.type = MO_DIRECT_ABSTRACT_DECL_NONE;
 				new_node->direct_abstract_decl.name = name;
 
 				if (!node) {
@@ -806,9 +809,9 @@ parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
 					return r;
 				}
 
-				Ast* new_node = allocate_node();
-				new_node->kind = AST_TYPE_DIRECT_ABSTRACT_DECLARATOR;
-				new_node->direct_abstract_decl.type = DIRECT_ABSTRACT_DECL_FUNCTION;
+				MO_Ast* new_node = allocate_node();
+				new_node->kind = MO_AST_TYPE_DIRECT_ABSTRACT_DECLARATOR;
+				new_node->direct_abstract_decl.type = MO_DIRECT_ABSTRACT_DECL_FUNCTION;
 				new_node->direct_abstract_decl.right_opt = params.node;
 				new_node->direct_abstract_decl.name = name;
 
@@ -822,9 +825,9 @@ parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
 		} else {
 			if(name) {
 				node = allocate_node();
-				node->kind = AST_TYPE_DIRECT_ABSTRACT_DECLARATOR;
+				node->kind = MO_AST_TYPE_DIRECT_ABSTRACT_DECLARATOR;
 				node->direct_abstract_decl.name = name;
-				node->direct_abstract_decl.type = DIRECT_ABSTRACT_DECL_NAME;
+				node->direct_abstract_decl.type = MO_DIRECT_ABSTRACT_DECL_NAME;
 			}
 			break;
 		}
@@ -846,8 +849,8 @@ parse_pointer(Lexer* lexer) {
 
 	MO_Parser_Result type_qual_list = parse_type_qualifier_list(lexer);
 
-	Ast* node = allocate_node();
-	node->kind = AST_TYPE_POINTER;
+	MO_Ast* node = allocate_node();
+	node->kind = MO_AST_TYPE_POINTER;
 	node->pointer.qualifiers = type_qual_list.node;
 
 	if(lexer_peek(lexer)->type == '*') {
@@ -878,8 +881,8 @@ parse_abstract_declarator(Lexer* lexer, bool require_name) {
 	if (dabstd.status == MO_PARSER_STATUS_FATAL)
 		return dabstd;
 
-	Ast* node = allocate_node();
-	node->kind = AST_TYPE_ABSTRACT_DECLARATOR;
+	MO_Ast* node = allocate_node();
+	node->kind = MO_AST_TYPE_ABSTRACT_DECLARATOR;
 	node->abstract_type_decl.pointer = res.node;
 	node->abstract_type_decl.direct_abstract_decl = dabstd.node;
 
@@ -902,7 +905,7 @@ parse_type_name(Lexer* lexer) {
 
 	MO_Parser_Result res = {0};
 	res.node = allocate_node();
-	res.node->kind = AST_TYPE_NAME;
+	res.node->kind = MO_AST_TYPE_NAME;
 	res.node->type_name.qualifiers_specifiers = spec_qual.node;
 	res.node->type_name.abstract_declarator = abst_decl.node;
 
@@ -926,28 +929,28 @@ parse_postfix_expression(Lexer* lexer) {
 	bool finding = true;
 	while (finding) {
 		Token* next = lexer_peek(lexer);
-		Ast* left = res.node;
+		MO_Ast* left = res.node;
 
 		switch (next->type) {
 		case '[': {
 			lexer_next(lexer);
 			res = parse_expression(lexer);
-			Ast* right = res.node;
+			MO_Ast* right = res.node;
 			if (res.status == MO_PARSER_STATUS_FATAL)
 				return res;
 			res = require_token(lexer, ']');
 			if (res.status == MO_PARSER_STATUS_FATAL)
 				return res;
-			Ast* node = allocate_node();
-			node->kind = AST_EXPRESSION_POSTFIX_BINARY;
+			MO_Ast* node = allocate_node();
+			node->kind = MO_AST_EXPRESSION_POSTFIX_BINARY;
 			node->expression_postfix_binary.left = left;
 			node->expression_postfix_binary.right = right;
-			node->expression_postfix_binary.po = POSTFIX_ARRAY_ACCESS;
+			node->expression_postfix_binary.po = MO_POSTFIX_ARRAY_ACCESS;
 			res.node = node;
 		} break;
 		case '(': {
 			lexer_next(lexer);
-			Ast* right = 0;
+			MO_Ast* right = 0;
 			if (lexer_peek(lexer)->type != ')') {
 				res = parse_argument_expression_list(lexer);
 				right = res.node;
@@ -955,11 +958,11 @@ parse_postfix_expression(Lexer* lexer) {
 			res = require_token(lexer, ')');
 			if (res.status == MO_PARSER_STATUS_FATAL)
 				return res;
-			Ast* node = allocate_node();
-			node->kind = AST_EXPRESSION_POSTFIX_BINARY;
+			MO_Ast* node = allocate_node();
+			node->kind = MO_AST_EXPRESSION_POSTFIX_BINARY;
 			node->expression_postfix_binary.left = left;
 			node->expression_postfix_binary.right = right;
-			node->expression_postfix_binary.po = POSTFIX_PROC_CALL;
+			node->expression_postfix_binary.po = MO_POSTFIX_PROC_CALL;
 			res.node = node;
 		} break;
 		case '.': {
@@ -968,11 +971,11 @@ parse_postfix_expression(Lexer* lexer) {
 			if (res.status == MO_PARSER_STATUS_FATAL)
 				return res;
 
-			Ast* node = allocate_node();
-			node->kind = AST_EXPRESSION_POSTFIX_BINARY;
+			MO_Ast* node = allocate_node();
+			node->kind = MO_AST_EXPRESSION_POSTFIX_BINARY;
 			node->expression_postfix_binary.left = left;
 			node->expression_postfix_binary.right = res.node;
-			node->expression_postfix_binary.po = POSTFIX_DOT;
+			node->expression_postfix_binary.po = MO_POSTFIX_DOT;
 			res.node = node;
 		} break;
 		case MO_TOKEN_ARROW: {
@@ -980,27 +983,27 @@ parse_postfix_expression(Lexer* lexer) {
 			res = parse_identifier(lexer);
 			if (res.status == MO_PARSER_STATUS_FATAL)
 				return res;
-			Ast* node = allocate_node();
-			node->kind = AST_EXPRESSION_POSTFIX_BINARY;
+			MO_Ast* node = allocate_node();
+			node->kind = MO_AST_EXPRESSION_POSTFIX_BINARY;
 			node->expression_postfix_binary.left = left;
 			node->expression_postfix_binary.right = res.node;
-			node->expression_postfix_binary.po = POSTFIX_ARROW;
+			node->expression_postfix_binary.po = MO_POSTFIX_ARROW;
 			res.node = node;
 		} break;
 		case MO_TOKEN_PLUS_PLUS: {
 			lexer_next(lexer);
-			Ast* node = allocate_node();
-			node->kind = AST_EXPRESSION_POSTFIX_UNARY;
+			MO_Ast* node = allocate_node();
+			node->kind = MO_AST_EXPRESSION_POSTFIX_UNARY;
 			node->expression_postfix_unary.expr = left;
-			node->expression_postfix_unary.po = POSTFIX_PLUS_PLUS;
+			node->expression_postfix_unary.po = MO_POSTFIX_PLUS_PLUS;
 			res.node = node;
 		} break;
 		case MO_TOKEN_MINUS_MINUS: {
 			lexer_next(lexer);
-			Ast* node = allocate_node();
-			node->kind = AST_EXPRESSION_POSTFIX_UNARY;
+			MO_Ast* node = allocate_node();
+			node->kind = MO_AST_EXPRESSION_POSTFIX_UNARY;
 			node->expression_postfix_unary.expr = left;
-			node->expression_postfix_unary.po = POSTFIX_MINUS_MINUS;
+			node->expression_postfix_unary.po = MO_POSTFIX_MINUS_MINUS;
 			res.node = node;
 		} break;
 		default:
@@ -1018,13 +1021,13 @@ parse_postfix_expression(Lexer* lexer) {
 MO_Parser_Result 
 parse_argument_expression_list(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
-	Ast* last_node = 0;
+	MO_Ast* last_node = 0;
 
 	res = parse_assignment_expression(lexer);
 	if (res.status == MO_PARSER_STATUS_FATAL)
 		return res;
 
-	Ast* left = res.node;
+	MO_Ast* left = res.node;
 
 	while(lexer_peek(lexer)->type == ',')
 	{
@@ -1032,8 +1035,8 @@ parse_argument_expression_list(Lexer* lexer) {
 
 		MO_Parser_Result right = parse_assignment_expression(lexer);
 
-		Ast* node = allocate_node();
-		node->kind = AST_EXPRESSION_ARGUMENT_LIST;
+		MO_Ast* node = allocate_node();
+		node->kind = MO_AST_EXPRESSION_ARGUMENT_LIST;
 		node->expression_argument_list.next = right.node;
 		node->expression_argument_list.expr = left;
 		left = node;
@@ -1065,9 +1068,9 @@ parse_unary_expression(Lexer* lexer) {
 				return res;
 
 			res.node = allocate_node();
-			res.node->kind = AST_EXPRESSION_UNARY;
+			res.node->kind = MO_AST_EXPRESSION_UNARY;
 			res.node->expression_unary.expr = expr.node;
-			res.node->expression_unary.uo = UNOP_PLUS_PLUS;
+			res.node->expression_unary.uo = MO_UNOP_PLUS_PLUS;
 		}break;
 		case MO_TOKEN_MINUS_MINUS: {
 			lexer_next(lexer);
@@ -1076,9 +1079,9 @@ parse_unary_expression(Lexer* lexer) {
 				return res;
 
 			res.node = allocate_node();
-			res.node->kind = AST_EXPRESSION_UNARY;
+			res.node->kind = MO_AST_EXPRESSION_UNARY;
 			res.node->expression_unary.expr = expr.node;
-			res.node->expression_unary.uo = UNOP_MINUS_MINUS;
+			res.node->expression_unary.uo = MO_UNOP_MINUS_MINUS;
 		} break;
 		// & * + - ~ !
 		case '&': 
@@ -1093,9 +1096,9 @@ parse_unary_expression(Lexer* lexer) {
 				return expr;
 
 			res.node = allocate_node();
-			res.node->kind = AST_EXPRESSION_UNARY;
+			res.node->kind = MO_AST_EXPRESSION_UNARY;
 			res.node->expression_unary.expr = expr.node;
-			res.node->expression_unary.uo = (Unary_Operator)next->type;
+			res.node->expression_unary.uo = (MO_Unary_Operator)next->type;
 		} break;
 
 		case MO_TOKEN_KEYWORD_SIZEOF: {
@@ -1112,7 +1115,7 @@ parse_unary_expression(Lexer* lexer) {
 					return n;
 					
 				res.node = allocate_node();
-				res.node->kind = AST_EXPRESSION_SIZEOF;
+				res.node->kind = MO_AST_EXPRESSION_SIZEOF;
 				res.node->expression_sizeof.is_type_name = true;
 				res.node->expression_sizeof.type = r.node;
 			} else {
@@ -1120,7 +1123,7 @@ parse_unary_expression(Lexer* lexer) {
 				if(r.status == MO_PARSER_STATUS_FATAL)
 					return r;
 				res.node = allocate_node();
-				res.node->kind = AST_EXPRESSION_SIZEOF;
+				res.node->kind = MO_AST_EXPRESSION_SIZEOF;
 				res.node->expression_sizeof.is_type_name = false;
 				res.node->expression_sizeof.expr;
 			}
@@ -1155,7 +1158,7 @@ parse_cast_expression(Lexer* lexer) {
 			return res;
 
 		res.node = allocate_node();
-		res.node->kind = AST_EXPRESSION_CAST;
+		res.node->kind = MO_AST_EXPRESSION_CAST;
 		res.node->expression_cast.expression = expr.node;
 		res.node->expression_cast.type_name = type_name.node;
 	} else {
@@ -1184,9 +1187,9 @@ parse_multiplicative_expression(Lexer* lexer) {
 				MO_Parser_Result right = parse_cast_expression(lexer);
 
 				// Construct the node
-				Ast* node = allocate_node();
-				node->kind = AST_EXPRESSION_MULTIPLICATIVE;
-				node->expression_binary.bo = (Binary_Operator)op->type;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_EXPRESSION_MULTIPLICATIVE;
+				node->expression_binary.bo = (MO_Binary_Operator)op->type;
 				node->expression_binary.left = res.node;
 				node->expression_binary.right = right.node;
 				res.node = node;
@@ -1217,9 +1220,9 @@ parse_additive_expression(Lexer* lexer) {
 				MO_Parser_Result right = parse_multiplicative_expression(lexer);
 
 				// Construct the node
-				Ast* node = allocate_node();
-				node->kind = AST_EXPRESSION_ADDITIVE;
-				node->expression_binary.bo = (Binary_Operator)op->type;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_EXPRESSION_ADDITIVE;
+				node->expression_binary.bo = (MO_Binary_Operator)op->type;
 				node->expression_binary.left = res.node;
 				node->expression_binary.right = right.node;
 				res.node = node;
@@ -1250,9 +1253,9 @@ parse_shift_expression(Lexer* lexer) {
 				MO_Parser_Result right = parse_additive_expression(lexer);
 
 				// Construct the node
-				Ast* node = allocate_node();
-				node->kind = AST_EXPRESSION_SHIFT;
-				node->expression_binary.bo = (Binary_Operator)op->type;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_EXPRESSION_SHIFT;
+				node->expression_binary.bo = (MO_Binary_Operator)op->type;
 				node->expression_binary.left = res.node;
 				node->expression_binary.right = right.node;
 				res.node = node;
@@ -1285,9 +1288,9 @@ parse_relational_expression(Lexer* lexer) {
 				MO_Parser_Result right = parse_shift_expression(lexer);
 
 				// Construct the node
-				Ast* node = allocate_node();
-				node->kind = AST_EXPRESSION_RELATIONAL;
-				node->expression_binary.bo = (Binary_Operator)op->type;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_EXPRESSION_RELATIONAL;
+				node->expression_binary.bo = (MO_Binary_Operator)op->type;
 				node->expression_binary.left = res.node;
 				node->expression_binary.right = right.node;
 				res.node = node;
@@ -1317,9 +1320,9 @@ parse_equality_expression(Lexer* lexer) {
 				MO_Parser_Result right = parse_relational_expression(lexer);
 
 				// Construct the node
-				Ast* node = allocate_node();
-				node->kind = AST_EXPRESSION_EQUALITY;
-				node->expression_binary.bo = (Binary_Operator)op->type;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_EXPRESSION_EQUALITY;
+				node->expression_binary.bo = (MO_Binary_Operator)op->type;
 				node->expression_binary.left = res.node;
 				node->expression_binary.right = right.node;
 				res.node = node;
@@ -1349,9 +1352,9 @@ parse_and_expression(Lexer* lexer) {
 				MO_Parser_Result right = parse_equality_expression(lexer);
 
 				// Construct the node
-				Ast* node = allocate_node();
-				node->kind = AST_EXPRESSION_AND;
-				node->expression_binary.bo = (Binary_Operator)op->type;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_EXPRESSION_AND;
+				node->expression_binary.bo = (MO_Binary_Operator)op->type;
 				node->expression_binary.left = res.node;
 				node->expression_binary.right = right.node;
 				res.node = node;
@@ -1381,9 +1384,9 @@ parse_exclusive_or_expression(Lexer* lexer) {
 				MO_Parser_Result right = parse_and_expression(lexer);
 
 				// Construct the node
-				Ast* node = allocate_node();
-				node->kind = AST_EXPRESSION_EXCLUSIVE_OR;
-				node->expression_binary.bo = (Binary_Operator)op->type;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_EXPRESSION_EXCLUSIVE_OR;
+				node->expression_binary.bo = (MO_Binary_Operator)op->type;
 				node->expression_binary.left = res.node;
 				node->expression_binary.right = right.node;
 				res.node = node;
@@ -1412,9 +1415,9 @@ MO_Parser_Result parse_inclusive_or_expression(Lexer* lexer) {
 				MO_Parser_Result right = parse_exclusive_or_expression(lexer);
 
 				// Construct the node
-				Ast* node = allocate_node();
-				node->kind = AST_EXPRESSION_INCLUSIVE_OR;
-				node->expression_binary.bo = (Binary_Operator)op->type;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_EXPRESSION_INCLUSIVE_OR;
+				node->expression_binary.bo = (MO_Binary_Operator)op->type;
 				node->expression_binary.left = res.node;
 				node->expression_binary.right = right.node;
 				res.node = node;
@@ -1444,9 +1447,9 @@ parse_logical_and_expression(Lexer* lexer) {
 				MO_Parser_Result right = parse_inclusive_or_expression(lexer);
 
 				// Construct the node
-				Ast* node = allocate_node();
-				node->kind = AST_EXPRESSION_LOGICAL_AND;
-				node->expression_binary.bo = (Binary_Operator)op->type;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_EXPRESSION_LOGICAL_AND;
+				node->expression_binary.bo = (MO_Binary_Operator)op->type;
 				node->expression_binary.left = res.node;
 				node->expression_binary.right = right.node;
 				res.node = node;
@@ -1475,9 +1478,9 @@ MO_Parser_Result parse_logical_or_expression(Lexer* lexer) {
 				MO_Parser_Result right = parse_logical_and_expression(lexer);
 
 				// Construct the node
-				Ast* node = allocate_node();
-				node->kind = AST_EXPRESSION_LOGICAL_OR;
-				node->expression_binary.bo = (Binary_Operator)op->type;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_EXPRESSION_LOGICAL_OR;
+				node->expression_binary.bo = (MO_Binary_Operator)op->type;
 				node->expression_binary.left = res.node;
 				node->expression_binary.right = right.node;
 				res.node = node;
@@ -1498,7 +1501,7 @@ parse_conditional_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
 	res = parse_logical_or_expression(lexer);
-	Ast* condition = res.node;
+	MO_Ast* condition = res.node;
 
 	if (res.status == MO_PARSER_STATUS_FATAL)
 		return res;
@@ -1508,19 +1511,19 @@ parse_conditional_expression(Lexer* lexer) {
 	if (next->type == '?') {
 		lexer_next(lexer);
 		res = parse_expression(lexer);
-		Ast* case_true = res.node;
+		MO_Ast* case_true = res.node;
 		if (res.status == MO_PARSER_STATUS_FATAL)
 			return res;
 		res = require_token(lexer, ':');
 		if (res.status == MO_PARSER_STATUS_FATAL)
 			return res;
 		res = parse_conditional_expression(lexer);
-		Ast* case_false = res.node;
+		MO_Ast* case_false = res.node;
 		if (res.status == MO_PARSER_STATUS_FATAL)
 			return res;
 
-		Ast* node = allocate_node();
-		node->kind = AST_EXPRESSION_TERNARY;
+		MO_Ast* node = allocate_node();
+		node->kind = MO_AST_EXPRESSION_TERNARY;
 		node->expression_ternary.condition = condition;
 		node->expression_ternary.case_true = case_true;
 		node->expression_ternary.case_false = case_false;
@@ -1547,9 +1550,9 @@ parse_assignment_expression(Lexer* lexer) {
 				MO_Parser_Result right = parse_conditional_expression(lexer);
 
 				// Construct the node
-				Ast* node = allocate_node();
-				node->kind = AST_EXPRESSION_ASSIGNMENT;
-				node->expression_binary.bo = (Binary_Operator)op->type;
+				MO_Ast* node = allocate_node();
+				node->kind = MO_AST_EXPRESSION_ASSIGNMENT;
+				node->expression_binary.bo = (MO_Binary_Operator)op->type;
 				node->expression_binary.left = res.node;
 				node->expression_binary.right = right.node;
 				res.node = node;
@@ -1576,13 +1579,13 @@ parse_primary_expression(Lexer* lexer) {
 		case MO_TOKEN_IDENTIFIER: {
 			lexer_next(lexer);
 			res.node = allocate_node();
-			res.node->kind = AST_EXPRESSION_PRIMARY_IDENTIFIER;
+			res.node->kind = MO_AST_EXPRESSION_PRIMARY_IDENTIFIER;
 			res.node->expression_primary.data = next;
 		}break;
 		case MO_TOKEN_STRING_LITERAL: {
 			lexer_next(lexer);
 			res.node = allocate_node();
-			res.node->kind = AST_EXPRESSION_PRIMARY_STRING_LITERAL;
+			res.node->kind = MO_AST_EXPRESSION_PRIMARY_STRING_LITERAL;
 			res.node->expression_primary.data = next;
 		}break;
 		case '(': {
@@ -1629,7 +1632,7 @@ parse_identifier(Lexer* lexer) {
 	}
 
 	res.node = allocate_node();
-	res.node->kind = AST_EXPRESSION_PRIMARY_IDENTIFIER;
+	res.node->kind = MO_AST_EXPRESSION_PRIMARY_IDENTIFIER;
 	res.node->expression_primary.data = t;
 
 	return res;
@@ -1644,13 +1647,13 @@ MO_Parser_Result
 parse_constant(Lexer* lexer) {
 	MO_Parser_Result result = { 0 };
 
-	Ast* node = allocate_node();
+	MO_Ast* node = allocate_node();
 	result.node = node;
 
 	Token* n = lexer_next(lexer);
 	switch (n->type) {
 		case MO_TOKEN_FLOAT_LITERAL: {
-			node->kind = AST_CONSTANT_FLOATING_POINT;
+			node->kind = MO_AST_CONSTANT_FLOATING_POINT;
 			node->expression_primary.data = n;
 		} break;
 		case MO_TOKEN_INT_HEX_LITERAL:
@@ -1662,17 +1665,17 @@ parse_constant(Lexer* lexer) {
 		case MO_TOKEN_INT_LITERAL:
 		case MO_TOKEN_INT_L_LITERAL:
 		case MO_TOKEN_INT_LL_LITERAL: {
-			node->kind = AST_CONSTANT_INTEGER;
+			node->kind = MO_AST_CONSTANT_INTEGER;
 			node->expression_primary.data = n;
 		} break;
 		case MO_TOKEN_IDENTIFIER: {
 			// enumeration-constant
-			node->kind = AST_CONSTANT_ENUMARATION;
+			node->kind = MO_AST_CONSTANT_ENUMARATION;
 			node->expression_primary.data = n;
 		} break;
 		case MO_TOKEN_CHAR_LITERAL: {
 			// character-constant
-			node->kind = AST_CONSTANT_CHARACTER;
+			node->kind = MO_AST_CONSTANT_CHARACTER;
 			node->expression_primary.data = n;
 		}break;
 		default: {
@@ -1689,8 +1692,8 @@ parse_constant(Lexer* lexer) {
 
 #define fprintf(...) fprintf(__VA_ARGS__); fflush(stdout)
 
-void parser_print_abstract_declarator(FILE*, Ast*);
-void parser_print_specifiers_qualifiers(FILE* out, Ast* sq);
+void parser_print_abstract_declarator(FILE*, MO_Ast*);
+void parser_print_specifiers_qualifiers(FILE* out, MO_Ast* sq);
 
 void
 parser_print_token(FILE* out, Token* t) {
@@ -1698,19 +1701,19 @@ parser_print_token(FILE* out, Token* t) {
 }
 
 void
-parser_print_type_qualifier_list(FILE* out, Ast* q) {
+parser_print_type_qualifier_list(FILE* out, MO_Ast* q) {
 	if (!q) return;
-	assert(q->kind == AST_TYPE_INFO);
-	if (q->specifier_qualifier.qualifiers & TYPE_QUALIFIER_CONST) {
+	assert(q->kind == MO_AST_TYPE_INFO);
+	if (q->specifier_qualifier.qualifiers & MO_TYPE_QUALIFIER_CONST) {
 		fprintf(out, "const ");
 	}
-	if (q->specifier_qualifier.qualifiers & TYPE_QUALIFIER_VOLATILE) {
+	if (q->specifier_qualifier.qualifiers & MO_TYPE_QUALIFIER_VOLATILE) {
 		fprintf(out, "volatile ");
 	}
 }
 
 void
-parser_print_pointer(FILE* out, Ast* pointer) {
+parser_print_pointer(FILE* out, MO_Ast* pointer) {
 	fprintf(out, "*");
 	parser_print_type_qualifier_list(out, pointer->pointer.qualifiers);
 	if (pointer->pointer.next) {
@@ -1719,14 +1722,14 @@ parser_print_pointer(FILE* out, Ast* pointer) {
 }
 
 void
-parser_print_param_decl(FILE* out, Ast* decl) {
-	assert(decl->kind == AST_PARAMETER_DECLARATION);
+parser_print_param_decl(FILE* out, MO_Ast* decl) {
+	assert(decl->kind == MO_AST_PARAMETER_DECLARATION);
 	parser_print_specifiers_qualifiers(out, decl->parameter_decl.decl_specifiers);
 	parser_print_abstract_declarator(out, decl->parameter_decl.declarator);
 }
 
 void
-parser_print_parameter_list(FILE* out, Ast* p) {
+parser_print_parameter_list(FILE* out, MO_Ast* p) {
 	for (u64 i = 0; i < array_length(p->parameter_list.param_decl); ++i) {
 		if (i != 0) fprintf(out, ",");
 		parser_print_param_decl(out, p->parameter_list.param_decl[i]);
@@ -1736,9 +1739,9 @@ parser_print_parameter_list(FILE* out, Ast* p) {
 }
 
 void
-parser_print_direct_abstract_declarator(FILE* out, Ast* ast) {
+parser_print_direct_abstract_declarator(FILE* out, MO_Ast* ast) {
 	
-	if (ast->direct_abstract_decl.type == DIRECT_ABSTRACT_DECL_NONE) {
+	if (ast->direct_abstract_decl.type == MO_DIRECT_ABSTRACT_DECL_NONE) {
 		fprintf(out, "(");
 		parser_print_abstract_declarator(out, ast->direct_abstract_decl.left_opt);
 		assert(ast->direct_abstract_decl.right_opt == 0);
@@ -1749,21 +1752,21 @@ parser_print_direct_abstract_declarator(FILE* out, Ast* ast) {
 	}
 
 	switch (ast->direct_abstract_decl.type) {
-		case DIRECT_ABSTRACT_DECL_FUNCTION: {
+		case MO_DIRECT_ABSTRACT_DECL_FUNCTION: {
 			fprintf(out, "(");
 			if (ast->direct_abstract_decl.right_opt) {
 				parser_print_parameter_list(out, ast->direct_abstract_decl.right_opt);
 			}
 			fprintf(out, ")");
 		} break;
-		case DIRECT_ABSTRACT_DECL_ARRAY: {
+		case MO_DIRECT_ABSTRACT_DECL_ARRAY: {
 			fprintf(out, "[");
 			if (ast->direct_abstract_decl.right_opt) {
 				parser_print_ast(out, ast->direct_abstract_decl.right_opt);
 			}
 			fprintf(out, "]");
 		} break;
-		case DIRECT_ABSTRACT_DECL_NAME: {
+		case MO_DIRECT_ABSTRACT_DECL_NAME: {
 			parser_print_token(out, ast->direct_abstract_decl.name);
 		} break;
 		default: fprintf(out, "<invalid direct abstract declarator>"); break;
@@ -1771,7 +1774,7 @@ parser_print_direct_abstract_declarator(FILE* out, Ast* ast) {
 }
 
 void
-parser_print_abstract_declarator(FILE* out, Ast* a) {
+parser_print_abstract_declarator(FILE* out, MO_Ast* a) {
 	if (a->abstract_type_decl.pointer) {
 		parser_print_pointer(out, a->abstract_type_decl.pointer);
 	}
@@ -1780,10 +1783,10 @@ parser_print_abstract_declarator(FILE* out, Ast* a) {
 	}
 }
 
-void parser_print_struct_declaration(FILE* out, Ast* s);
+void parser_print_struct_declaration(FILE* out, MO_Ast* s);
 
 void
-parser_print_struct_declaration_list(FILE* out, Ast* l) {
+parser_print_struct_declaration_list(FILE* out, MO_Ast* l) {
 	for(u64 i = 0; i < array_length(l->struct_declaration_list.list); ++i) {
 		if(i > 0) fprintf(out, "\n");
 		parser_print_struct_declaration(out, l->struct_declaration_list.list[i]);
@@ -1791,14 +1794,14 @@ parser_print_struct_declaration_list(FILE* out, Ast* l) {
 }
 
 void
-parser_print_struct_declarator(FILE* out, Ast* d) {
-	assert(d->kind == AST_TYPE_STRUCT_DECLARATOR);
+parser_print_struct_declarator(FILE* out, MO_Ast* d) {
+	assert(d->kind == MO_AST_TYPE_STRUCT_DECLARATOR);
 	parser_print_abstract_declarator(out, d->struct_declarator.declarator);
 }
 
 void
-parser_print_struct_declarator_bitfield(FILE* out, Ast* d) {
-	assert(d->kind == AST_TYPE_STRUCT_DECLARATOR_BITFIELD);
+parser_print_struct_declarator_bitfield(FILE* out, MO_Ast* d) {
+	assert(d->kind == MO_AST_TYPE_STRUCT_DECLARATOR_BITFIELD);
 	if(d->struct_declarator_bitfield.declarator) {
 		parser_print_ast(out, d->struct_declarator_bitfield.declarator);
 	}
@@ -1807,23 +1810,23 @@ parser_print_struct_declarator_bitfield(FILE* out, Ast* d) {
 }
 
 void
-parser_print_struct_declarator_list(FILE* out, Ast* d) {
-	assert(d->kind == AST_TYPE_STRUCT_DECLARATOR_LIST);
+parser_print_struct_declarator_list(FILE* out, MO_Ast* d) {
+	assert(d->kind == MO_AST_TYPE_STRUCT_DECLARATOR_LIST);
 	for(u64 i = 0; i < array_length(d->struct_declarator_list.list); ++i) {
 		if(i > 0) fprintf(out, ", ");
-		Node_Kind kind = d->struct_declarator_list.list[i]->kind;
-		Ast* node = d->struct_declarator_list.list[i];
-		if(kind == AST_TYPE_STRUCT_DECLARATOR){
+		MO_Node_Kind kind = d->struct_declarator_list.list[i]->kind;
+		MO_Ast* node = d->struct_declarator_list.list[i];
+		if(kind == MO_AST_TYPE_STRUCT_DECLARATOR){
 			parser_print_struct_declarator(out, node);
-		} else if(kind == AST_TYPE_STRUCT_DECLARATOR_BITFIELD) {
+		} else if(kind == MO_AST_TYPE_STRUCT_DECLARATOR_BITFIELD) {
 			parser_print_struct_declarator_bitfield(out, d->struct_declaration_list.list[i]);
 		}
 	}
 }
 
 void
-parser_print_struct_declaration(FILE* out, Ast* s) {
-	assert(s->kind == AST_STRUCT_DECLARATION);
+parser_print_struct_declaration(FILE* out, MO_Ast* s) {
+	assert(s->kind == MO_AST_STRUCT_DECLARATION);
 	parser_print_specifiers_qualifiers(out, s->struct_declaration.spec_qual);
 	fprintf(out, " ");
 	parser_print_struct_declarator_list(out, s->struct_declaration.struct_decl_list);
@@ -1831,8 +1834,8 @@ parser_print_struct_declaration(FILE* out, Ast* s) {
 }
 
 void
-parser_print_enumerator(FILE* out, Ast* e) {
-	assert(e->kind == AST_ENUMERATOR);
+parser_print_enumerator(FILE* out, MO_Ast* e) {
+	assert(e->kind == MO_AST_ENUMERATOR);
 	parser_print_token(out, e->enumerator.enum_constant);
 	fprintf(out, " ");
 	if(e->enumerator.const_expr) {
@@ -1842,17 +1845,17 @@ parser_print_enumerator(FILE* out, Ast* e) {
 }
 
 void
-parser_print_enumerator_list(FILE* out, Ast* el) {
-	assert(el->kind == AST_ENUMERATOR_LIST);
+parser_print_enumerator_list(FILE* out, MO_Ast* el) {
+	assert(el->kind == MO_AST_ENUMERATOR_LIST);
 	for(u64 i = 0; i < array_length(el->enumerator_list.list); ++i) {
 		if(i > 0) fprintf(out, ", ");
-		parser_print_enumerator(out, (Ast*)el->enumerator_list.list[i]);
+		parser_print_enumerator(out, (MO_Ast*)el->enumerator_list.list[i]);
 	}
 }
 
 void
-parser_print_struct_description(FILE* out, Ast* sd) {
-	assert(sd->kind == AST_STRUCT_DECLARATION_LIST);
+parser_print_struct_description(FILE* out, MO_Ast* sd) {
+	assert(sd->kind == MO_AST_STRUCT_DECLARATION_LIST);
 	for(u64 i = 0; i < array_length(sd->struct_declaration_list.list); ++i) {
 		if(i > 0) fprintf(out, " ");
 		parser_print_struct_declaration(out, sd->struct_declaration_list.list[i]);
@@ -1860,31 +1863,31 @@ parser_print_struct_description(FILE* out, Ast* sd) {
 }
 
 void
-parser_print_specifiers_qualifiers(FILE* out, Ast* sq) {
+parser_print_specifiers_qualifiers(FILE* out, MO_Ast* sq) {
 	parser_print_type_qualifier_list(out, sq);
 	switch (sq->specifier_qualifier.kind) {
-		case TYPE_VOID:
+		case MO_TYPE_VOID:
 			fprintf(out, "void");
 			break;
-		case TYPE_PRIMITIVE:{
+		case MO_TYPE_PRIMITIVE:{
 			for (s32 i = 0; i < ARRAY_LENGTH(sq->specifier_qualifier.primitive); ++i) {
 				for (s32 c = 0; c < sq->specifier_qualifier.primitive[i]; ++c) {
 					if (c != 0) fprintf(out, " ");
 					switch (i) {
-						case TYPE_PRIMITIVE_CHAR:		fprintf(out, "char "); break;
-						case TYPE_PRIMITIVE_DOUBLE:		fprintf(out, "double "); break;
-						case TYPE_PRIMITIVE_FLOAT:		fprintf(out, "float "); break;
-						case TYPE_PRIMITIVE_INT:		fprintf(out, "int "); break;
-						case TYPE_PRIMITIVE_LONG:		fprintf(out, "long "); break;
-						case TYPE_PRIMITIVE_SHORT:		fprintf(out, "short "); break;
-						case TYPE_PRIMITIVE_SIGNED:		fprintf(out, "signed "); break;
-						case TYPE_PRIMITIVE_UNSIGNED:	fprintf(out, "unsigned "); break;
+						case MO_TYPE_PRIMITIVE_CHAR:		fprintf(out, "char "); break;
+						case MO_TYPE_PRIMITIVE_DOUBLE:		fprintf(out, "double "); break;
+						case MO_TYPE_PRIMITIVE_FLOAT:		fprintf(out, "float "); break;
+						case MO_TYPE_PRIMITIVE_INT:		fprintf(out, "int "); break;
+						case MO_TYPE_PRIMITIVE_LONG:		fprintf(out, "long "); break;
+						case MO_TYPE_PRIMITIVE_SHORT:		fprintf(out, "short "); break;
+						case MO_TYPE_PRIMITIVE_SIGNED:		fprintf(out, "signed "); break;
+						case MO_TYPE_PRIMITIVE_UNSIGNED:	fprintf(out, "unsigned "); break;
 						default: fprintf(out, "<invalid primitive type>"); break;
 					}
 				}
 			}
 		}break;
-		case TYPE_STRUCT: {
+		case MO_TYPE_STRUCT: {
 			fprintf(out, "struct ");
 			if(sq->specifier_qualifier.struct_name)
 				parser_print_token(out, sq->specifier_qualifier.struct_name);
@@ -1894,7 +1897,7 @@ parser_print_specifiers_qualifiers(FILE* out, Ast* sq) {
 				fprintf(out, " } ");
 			}
 		}break;
-		case TYPE_UNION: {
+		case MO_TYPE_UNION: {
 			fprintf(out, "union ");
 			if(sq->specifier_qualifier.struct_name)
 				parser_print_token(out, sq->specifier_qualifier.struct_name);
@@ -1904,10 +1907,10 @@ parser_print_specifiers_qualifiers(FILE* out, Ast* sq) {
 				fprintf(out, " } ");
 			}
 		}break;
-		case TYPE_ALIAS: {
+		case MO_TYPE_ALIAS: {
 			parser_print_token(out, sq->specifier_qualifier.alias);
 		}break;
-		case TYPE_ENUM: {
+		case MO_TYPE_ENUM: {
 			fprintf(out, "enum ");
 			if(sq->specifier_qualifier.enum_name)
 				parser_print_token(out, sq->specifier_qualifier.enum_name);
@@ -1921,72 +1924,72 @@ parser_print_specifiers_qualifiers(FILE* out, Ast* sq) {
 }
 
 void
-parser_print_typename(FILE* out, Ast* node) {
+parser_print_typename(FILE* out, MO_Ast* node) {
 	parser_print_specifiers_qualifiers(out, node->type_name.qualifiers_specifiers);
 	parser_print_abstract_declarator(out, node->type_name.abstract_declarator);
 }
 
 void
-parser_print_ast(FILE* out, Ast* ast) {
+parser_print_ast(FILE* out, MO_Ast* ast) {
 	if (!ast) return;
 
 	switch (ast->kind) {
 
-		case AST_EXPRESSION_PRIMARY_CONSTANT:
-		case AST_EXPRESSION_PRIMARY_STRING_LITERAL:
-		case AST_EXPRESSION_PRIMARY_IDENTIFIER: {
+		case MO_AST_EXPRESSION_PRIMARY_CONSTANT:
+		case MO_AST_EXPRESSION_PRIMARY_STRING_LITERAL:
+		case MO_AST_EXPRESSION_PRIMARY_IDENTIFIER: {
 			fprintf(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
 			fflush(out);
 		}break;
-		case AST_EXPRESSION_CONDITIONAL:
+		case MO_AST_EXPRESSION_CONDITIONAL:
 			break;
-		case AST_EXPRESSION_ASSIGNMENT: {
+		case MO_AST_EXPRESSION_ASSIGNMENT: {
 			parser_print_ast(out, ast->expression_binary.left);
 			fprintf(out, " ");
 			switch (ast->expression_binary.bo) {
-				case BINOP_EQUAL: fprintf(out, "="); break;
-				case BINOP_AND_EQ: fprintf(out, "&="); break;
-				case BINOP_OR_EQ: fprintf(out, "|="); break;
-				case BINOP_MINUS_EQ: fprintf(out, "-="); break;
-				case BINOP_PLUS_EQ: fprintf(out, "+="); break;
-				case BINOP_MOD_EQ: fprintf(out, "%%="); break;
-				case BINOP_TIMES_EQ: fprintf(out, "*="); break;
-				case BINOP_DIV_EQ: fprintf(out, "/="); break;
-				case BINOP_XOR_EQ: fprintf(out, "^="); break;
-				case BINOP_SHL_EQ: fprintf(out, "<<="); break;
-				case BINOP_SHR_EQ: fprintf(out, ">>="); break;
+				case MO_BINOP_EQUAL: fprintf(out, "="); break;
+				case MO_BINOP_AND_EQ: fprintf(out, "&="); break;
+				case MO_BINOP_OR_EQ: fprintf(out, "|="); break;
+				case MO_BINOP_MINUS_EQ: fprintf(out, "-="); break;
+				case MO_BINOP_PLUS_EQ: fprintf(out, "+="); break;
+				case MO_BINOP_MOD_EQ: fprintf(out, "%%="); break;
+				case MO_BINOP_TIMES_EQ: fprintf(out, "*="); break;
+				case MO_BINOP_DIV_EQ: fprintf(out, "/="); break;
+				case MO_BINOP_XOR_EQ: fprintf(out, "^="); break;
+				case MO_BINOP_SHL_EQ: fprintf(out, "<<="); break;
+				case MO_BINOP_SHR_EQ: fprintf(out, ">>="); break;
 				default: fprintf(out, "<invalid assignment op>"); break;
 			}
 			fprintf(out, " ");
 			parser_print_ast(out, ast->expression_binary.right);
 		} break;
-		case AST_EXPRESSION_ARGUMENT_LIST: {
+		case MO_AST_EXPRESSION_ARGUMENT_LIST: {
 			parser_print_ast(out, ast->expression_argument_list.expr);
 			fprintf(out, ", ");
 			parser_print_ast(out, ast->expression_argument_list.next);
 		} break;
-		case AST_EXPRESSION_UNARY:{
+		case MO_AST_EXPRESSION_UNARY:{
 			switch (ast->expression_unary.uo) {
-				case UNOP_ADDRESS_OF: fprintf(out, "&"); break;
-				case UNOP_DEREFERENCE: fprintf(out, "*"); break;
-				case UNOP_MINUS: fprintf(out, "-"); break;
-				case UNOP_PLUS: fprintf(out, "+"); break;
-				case UNOP_MINUS_MINUS: fprintf(out, "--"); break;
-				case UNOP_PLUS_PLUS: fprintf(out, "++"); break;
-				case UNOP_NOT_BITWISE: fprintf(out, "~"); break;
-				case UNOP_NOT_LOGICAL: fprintf(out, "!"); break;
+				case MO_UNOP_ADDRESS_OF: fprintf(out, "&"); break;
+				case MO_UNOP_DEREFERENCE: fprintf(out, "*"); break;
+				case MO_UNOP_MINUS: fprintf(out, "-"); break;
+				case MO_UNOP_PLUS: fprintf(out, "+"); break;
+				case MO_UNOP_MINUS_MINUS: fprintf(out, "--"); break;
+				case MO_UNOP_PLUS_PLUS: fprintf(out, "++"); break;
+				case MO_UNOP_NOT_BITWISE: fprintf(out, "~"); break;
+				case MO_UNOP_NOT_LOGICAL: fprintf(out, "!"); break;
 				default: fprintf(out, "<unknown expression unary>"); break;
 			}
 			parser_print_ast(out, ast->expression_unary.expr);
 		}break;
-		case AST_EXPRESSION_CAST:
+		case MO_AST_EXPRESSION_CAST:
 			fprintf(out, "(");
 			parser_print_typename(out, ast->expression_cast.type_name);
 			fprintf(out, ")");
 			parser_print_ast(out, ast->expression_cast.expression);
 			break;
-		case AST_EXPRESSION_ADDITIVE: 
-		case AST_EXPRESSION_MULTIPLICATIVE: {
+		case MO_AST_EXPRESSION_ADDITIVE: 
+		case MO_AST_EXPRESSION_MULTIPLICATIVE: {
 			fprintf(out, "(");
 			fflush(out);
 			parser_print_ast(out, ast->expression_binary.left);
@@ -1998,81 +2001,81 @@ parser_print_ast(FILE* out, Ast* ast) {
 			fprintf(out, ")");
 			fflush(out);
 		}break;
-		case AST_EXPRESSION_SHIFT:
+		case MO_AST_EXPRESSION_SHIFT:
 			fprintf(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
 			fprintf(out, " ");
 				switch (ast->expression_binary.bo) {
-				case BINOP_SHL: fprintf(out, "<<"); break;
-				case BINOP_SHR: fprintf(out, ">>"); break;
+				case MO_BINOP_SHL: fprintf(out, "<<"); break;
+				case MO_BINOP_SHR: fprintf(out, ">>"); break;
 				default: fprintf(out, "<invalid shift operator>"); break;
 			}
 			fprintf(out, " ");
 			parser_print_ast(out, ast->expression_binary.right);
 			fprintf(out, ")");
 			break;
-		case AST_EXPRESSION_RELATIONAL:
+		case MO_AST_EXPRESSION_RELATIONAL:
 			fprintf(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
 			fprintf(out, " ");
 			switch (ast->expression_binary.bo) {
 				case '<': fprintf(out, "<"); break;
 				case '>': fprintf(out, ">"); break;
-				case BINOP_LE: fprintf(out, "<="); break;
-				case BINOP_GE: fprintf(out, ">="); break;
+				case MO_BINOP_LE: fprintf(out, "<="); break;
+				case MO_BINOP_GE: fprintf(out, ">="); break;
 				default: fprintf(out, "<invalid relational operator>"); break;
 			}
 			fprintf(out, " ");
 			parser_print_ast(out, ast->expression_binary.right);
 			fprintf(out, ")");
 			break;
-		case AST_EXPRESSION_EQUALITY:
+		case MO_AST_EXPRESSION_EQUALITY:
 			fprintf(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
 			switch (ast->expression_binary.bo) {
-				case BINOP_EQUAL_EQUAL: fprintf(out, " == "); break;
-				case BINOP_NOT_EQUAL: fprintf(out, " != "); break;
+				case MO_BINOP_EQUAL_EQUAL: fprintf(out, " == "); break;
+				case MO_BINOP_NOT_EQUAL: fprintf(out, " != "); break;
 				default: fprintf(out, "<invalid equality operator>"); break;
 			}
 			parser_print_ast(out, ast->expression_binary.right);
 			fprintf(out, ")");
 			break;
-		case AST_EXPRESSION_AND: {
+		case MO_AST_EXPRESSION_AND: {
 			fprintf(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
 			fprintf(out, " & ");
 			parser_print_ast(out, ast->expression_binary.right);
 			fprintf(out, ")");
 		} break;
-		case AST_EXPRESSION_EXCLUSIVE_OR: {
+		case MO_AST_EXPRESSION_EXCLUSIVE_OR: {
 			fprintf(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
 			fprintf(out, " ^ ");
 			parser_print_ast(out, ast->expression_binary.right);
 			fprintf(out, ")");
 		}break;
-		case AST_EXPRESSION_INCLUSIVE_OR: {
+		case MO_AST_EXPRESSION_INCLUSIVE_OR: {
 			fprintf(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
 			fprintf(out, " | ");
 			parser_print_ast(out, ast->expression_binary.right);
 			fprintf(out, ")");
 		}break;
-		case AST_EXPRESSION_LOGICAL_AND: {
+		case MO_AST_EXPRESSION_LOGICAL_AND: {
 			fprintf(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
 			fprintf(out, " && ");
 			parser_print_ast(out, ast->expression_binary.right);
 			fprintf(out, ")");
 		} break;
-		case AST_EXPRESSION_LOGICAL_OR: {
+		case MO_AST_EXPRESSION_LOGICAL_OR: {
 			fprintf(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
 			fprintf(out, " || ");
 			parser_print_ast(out, ast->expression_binary.right);
 			fprintf(out, ")");
 		}break;
-		case AST_EXPRESSION_SIZEOF: {
+		case MO_AST_EXPRESSION_SIZEOF: {
 			fprintf(out, "sizeof (");
 			if(ast->expression_sizeof.is_type_name) {
 				parser_print_typename(out, ast->expression_sizeof.type);
@@ -2082,37 +2085,37 @@ parser_print_ast(FILE* out, Ast* ast) {
 			fprintf(out, ")");
 		}break;
 
-		case AST_EXPRESSION_POSTFIX_UNARY: {
+		case MO_AST_EXPRESSION_POSTFIX_UNARY: {
 			if (ast->expression_postfix_unary.expr) {
 				parser_print_ast(out, ast->expression_postfix_unary.expr);
 				switch (ast->expression_postfix_unary.po) {
-					case POSTFIX_MINUS_MINUS: fprintf(out, "--"); break;
-					case POSTFIX_PLUS_PLUS: fprintf(out, "++"); break;
+					case MO_POSTFIX_MINUS_MINUS: fprintf(out, "--"); break;
+					case MO_POSTFIX_PLUS_PLUS: fprintf(out, "++"); break;
 					default: fprintf(out, "<unknown postfix unary>"); break;
 				}
 			}
 		}break;
-		case AST_EXPRESSION_POSTFIX_BINARY: {
+		case MO_AST_EXPRESSION_POSTFIX_BINARY: {
 			parser_print_ast(out, ast->expression_postfix_binary.left);
 			switch (ast->expression_postfix_binary.po) {
-				case POSTFIX_ARROW: fprintf(out, "->"); break;
-				case POSTFIX_DOT: fprintf(out, "."); break;
-				case POSTFIX_ARRAY_ACCESS: fprintf(out, "["); break;
-				case POSTFIX_PROC_CALL: fprintf(out, "("); break;
+				case MO_POSTFIX_ARROW: fprintf(out, "->"); break;
+				case MO_POSTFIX_DOT: fprintf(out, "."); break;
+				case MO_POSTFIX_ARRAY_ACCESS: fprintf(out, "["); break;
+				case MO_POSTFIX_PROC_CALL: fprintf(out, "("); break;
 				default: fprintf(out, "<unknown postfix binary>"); break;
 			}
 			if (ast->expression_postfix_binary.right) {
 				parser_print_ast(out, ast->expression_postfix_binary.right);
 			}
 			switch (ast->expression_postfix_binary.po) {
-				case POSTFIX_ARROW: break;
-				case POSTFIX_DOT: break;
-				case POSTFIX_ARRAY_ACCESS: fprintf(out, "]"); break;
-				case POSTFIX_PROC_CALL: fprintf(out, ")"); break;
+				case MO_POSTFIX_ARROW: break;
+				case MO_POSTFIX_DOT: break;
+				case MO_POSTFIX_ARRAY_ACCESS: fprintf(out, "]"); break;
+				case MO_POSTFIX_PROC_CALL: fprintf(out, ")"); break;
 				default: fprintf(out, "<unknown postfix binary>"); break;
 			}
 		}break;
-		case AST_EXPRESSION_TERNARY: {
+		case MO_AST_EXPRESSION_TERNARY: {
 			fprintf(out, "(");
 			parser_print_ast(out, ast->expression_ternary.condition);
 			fprintf(out, ") ? (");
@@ -2123,35 +2126,35 @@ parser_print_ast(FILE* out, Ast* ast) {
 			fflush(out);
 		}break;
 
-		case AST_CONSTANT_FLOATING_POINT:
-		case AST_CONSTANT_INTEGER: {
+		case MO_AST_CONSTANT_FLOATING_POINT:
+		case MO_AST_CONSTANT_INTEGER: {
 			fprintf(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
 			fflush(out);
 		}break;
-		case AST_CONSTANT_ENUMARATION: {
+		case MO_AST_CONSTANT_ENUMARATION: {
 			fprintf(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
 			fflush(out);
 		}break;
-		case AST_CONSTANT_CHARACTER:
+		case MO_AST_CONSTANT_CHARACTER:
 			fprintf(out, "'%.*s'", ast->expression_primary.data->length, ast->expression_primary.data->data);
 			fflush(out);
 			break;
-		case AST_TYPE_NAME:
+		case MO_AST_TYPE_NAME:
 			parser_print_typename(out, ast);
 			break;
 
-		case AST_TYPE_ABSTRACT_DECLARATOR: {
+		case MO_AST_TYPE_ABSTRACT_DECLARATOR: {
 			if (ast->abstract_type_decl.pointer)
 				parser_print_pointer(out, ast->abstract_type_decl.pointer);
 			if (ast->abstract_type_decl.direct_abstract_decl) {
 				parser_print_direct_abstract_declarator(out, ast->abstract_type_decl.direct_abstract_decl);
 			}
 		}break;
-		case AST_TYPE_DIRECT_ABSTRACT_DECLARATOR: {
+		case MO_AST_TYPE_DIRECT_ABSTRACT_DECLARATOR: {
 			parser_print_direct_abstract_declarator(out, ast);
 		} break;
 
-		case AST_PARAMETER_LIST:
+		case MO_AST_PARAMETER_LIST:
 			break;
 
 		default: {
@@ -2162,7 +2165,7 @@ parser_print_ast(FILE* out, Ast* ast) {
 }
 
 void 
-mop_print_ast(struct Ast_t* ast) {
+mop_print_ast(struct MO_Ast_t* ast) {
 	parser_print_ast(stdout, ast);
 }
 
