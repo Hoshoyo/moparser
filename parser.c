@@ -7,33 +7,33 @@
 
 #include "lexer.c"
 
-void parser_print_ast(FILE* out, MO_Ast* ast);
+static void parser_print_ast(FILE* out, MO_Ast* ast);
 
-MO_Parser_Result parse_type_name(Lexer* lexer);
-MO_Parser_Result parse_postfix_expression(Lexer* lexer);
-MO_Parser_Result parse_argument_expression_list(Lexer* lexer);
-MO_Parser_Result parse_unary_expression(Lexer* lexer);
-MO_Parser_Result parse_cast_expression(Lexer* lexer);
-MO_Parser_Result parse_multiplicative_expression(Lexer* lexer);
-MO_Parser_Result parse_additive_expression(Lexer* lexer);
-MO_Parser_Result parse_shift_expression(Lexer* lexer);
-MO_Parser_Result parse_relational_expression(Lexer* lexer);
-MO_Parser_Result parse_equality_expression(Lexer* lexer);
-MO_Parser_Result parse_and_expression(Lexer* lexer);
-MO_Parser_Result parse_exclusive_or_expression(Lexer* lexer);
-MO_Parser_Result parse_inclusive_or_expression(Lexer* lexer);
-MO_Parser_Result parse_logical_and_expression(Lexer* lexer);
-MO_Parser_Result parse_logical_or_expression(Lexer* lexer);
-MO_Parser_Result parse_conditional_expression(Lexer* lexer);
-MO_Parser_Result parse_assignment_expression(Lexer* lexer);
-MO_Parser_Result parse_primary_expression(Lexer* lexer);
-MO_Parser_Result parse_expression(Lexer* lexer);
-MO_Parser_Result parse_constant(Lexer* lexer);
-MO_Parser_Result parse_identifier(Lexer* lexer);
-MO_Parser_Result parse_pointer(Lexer* lexer);
-MO_Parser_Result parse_abstract_declarator(Lexer* lexer, bool require_name);
-MO_Parser_Result parse_struct_declaration_list(Lexer* lexer);
-MO_Parser_Result parse_constant_expression(Lexer* lexer);
+static MO_Parser_Result parse_type_name(Lexer* lexer);
+static MO_Parser_Result parse_postfix_expression(Lexer* lexer);
+static MO_Parser_Result parse_argument_expression_list(Lexer* lexer);
+static MO_Parser_Result parse_unary_expression(Lexer* lexer);
+static MO_Parser_Result parse_cast_expression(Lexer* lexer);
+static MO_Parser_Result parse_multiplicative_expression(Lexer* lexer);
+static MO_Parser_Result parse_additive_expression(Lexer* lexer);
+static MO_Parser_Result parse_shift_expression(Lexer* lexer);
+static MO_Parser_Result parse_relational_expression(Lexer* lexer);
+static MO_Parser_Result parse_equality_expression(Lexer* lexer);
+static MO_Parser_Result parse_and_expression(Lexer* lexer);
+static MO_Parser_Result parse_exclusive_or_expression(Lexer* lexer);
+static MO_Parser_Result parse_inclusive_or_expression(Lexer* lexer);
+static MO_Parser_Result parse_logical_and_expression(Lexer* lexer);
+static MO_Parser_Result parse_logical_or_expression(Lexer* lexer);
+static MO_Parser_Result parse_conditional_expression(Lexer* lexer);
+static MO_Parser_Result parse_assignment_expression(Lexer* lexer);
+static MO_Parser_Result parse_primary_expression(Lexer* lexer);
+static MO_Parser_Result parse_expression(Lexer* lexer);
+static MO_Parser_Result parse_constant(Lexer* lexer);
+static MO_Parser_Result parse_identifier(Lexer* lexer);
+static MO_Parser_Result parse_pointer(Lexer* lexer);
+static MO_Parser_Result parse_abstract_declarator(Lexer* lexer, bool require_name);
+static MO_Parser_Result parse_struct_declaration_list(Lexer* lexer);
+static MO_Parser_Result parse_constant_expression(Lexer* lexer);
 
 // Declarations
 // https://docs.microsoft.com/en-us/cpp/c-language/summary-of-declarations?view=vs-2017
@@ -95,7 +95,7 @@ require_token(Lexer* lexer, MO_Token_Type tt) {
 //     struct-or-union identifier_opt { struct-declaration-list }
 //     struct-or-union identifier
 
-MO_Type_Primitive
+static MO_Type_Primitive
 primitive_from_token(Token* t) {
 	switch (t->type) {
 		case MO_TOKEN_KEYWORD_UNSIGNED:
@@ -136,7 +136,7 @@ parser_type_primitive_get_info(MO_Type_Primitive p) {
 // enumerator:
 //     enumeration-constant
 //     enumeration-constant = constant-expression
-MO_Parser_Result
+static MO_Parser_Result
 parse_enumerator(Lexer* lexer) {
 	MO_Parser_Result res = {0};
 
@@ -164,7 +164,7 @@ parse_enumerator(Lexer* lexer) {
 // enumerator-list:
 //     enumerator
 //     enumerator-list , enumerator
-MO_Parser_Result
+static MO_Parser_Result
 parse_enumerator_list(Lexer* lexer) {
 	MO_Parser_Result res = {0};
 
@@ -205,7 +205,7 @@ parse_enumerator_list(Lexer* lexer) {
 //     struct-or-union-specifier
 //     enum-specifier
 //     typedef-name
-MO_Parser_Result
+static MO_Parser_Result
 parse_type_specifier(Lexer* lexer, MO_Ast* type) {
 	MO_Parser_Result res = {0};
 	Token* s = lexer_peek(lexer);
@@ -345,7 +345,7 @@ parse_type_specifier(Lexer* lexer, MO_Ast* type) {
 // type-qualifier:
 //     const
 //     volatile
-MO_Parser_Result
+static MO_Parser_Result
 parse_type_qualifier(Lexer* lexer, MO_Ast* type) {
 	MO_Parser_Result res = {0};
 	Token* q = lexer_peek(lexer);
@@ -388,7 +388,7 @@ parse_type_qualifier(Lexer* lexer, MO_Ast* type) {
 // specifier-qualifier-list:
 // 	type-specifier specifier-qualifier-list_opt
 // 	type-qualifier specifier-qualifier-list_opt
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_specifier_qualifier_list(Lexer* lexer) {
 	MO_Parser_Result res = parse_type_qualifier(lexer, 0);
 	if(res.status == MO_PARSER_STATUS_FATAL) {
@@ -421,7 +421,7 @@ parse_specifier_qualifier_list(Lexer* lexer) {
 // type-qualifier-list:
 //     type-qualifier
 //     type-qualifier-list type-qualifier
-MO_Parser_Result
+static MO_Parser_Result
 parse_type_qualifier_list(Lexer* lexer) {
 	MO_Parser_Result res = {0};
 
@@ -436,7 +436,7 @@ parse_type_qualifier_list(Lexer* lexer) {
 	return res;
 }
 
-MO_Parser_Result
+static MO_Parser_Result
 parse_constant_expression(Lexer* lexer) {
 	return parse_conditional_expression(lexer);
 }
@@ -444,7 +444,7 @@ parse_constant_expression(Lexer* lexer) {
 // struct-declarator:
 //     declarator
 //     declarator_opt : constant-expression
-MO_Parser_Result
+static MO_Parser_Result
 parse_struct_declarator(Lexer* lexer) {
 	MO_Parser_Result res = {0};
 
@@ -484,7 +484,7 @@ parse_struct_declarator(Lexer* lexer) {
 // struct-declarator-list:
 //     struct-declarator 
 //     struct-declarator-list , struct-declarator
-MO_Parser_Result
+static MO_Parser_Result
 parse_struct_declarator_list(Lexer* lexer) {
 	MO_Parser_Result res = {0};
 
@@ -508,7 +508,7 @@ parse_struct_declarator_list(Lexer* lexer) {
 	return res;
 }
 
-MO_Parser_Result
+static MO_Parser_Result
 parse_struct_declaration(Lexer* lexer) {
 	MO_Parser_Result spec_qual = parse_specifier_qualifier_list(lexer);
 	if(spec_qual.status == MO_PARSER_STATUS_FATAL)
@@ -535,7 +535,7 @@ parse_struct_declaration(Lexer* lexer) {
 //
 // struct-declaration:
 //     specifier-qualifier-list struct-declarator-list ;
-MO_Parser_Result
+static MO_Parser_Result
 parse_struct_declaration_list(Lexer* lexer) {
 
 	MO_Parser_Result r = parse_struct_declaration(lexer);
@@ -566,7 +566,7 @@ parse_struct_declaration_list(Lexer* lexer) {
 //     extern
 //     typedef
 //     __declspec ( extended-decl-modifier-seq ) /* Microsoft Specific */
-Storage_Class
+static Storage_Class
 parse_storage_class_specifier(Lexer* lexer) {
 	Storage_Class res = STORAGE_CLASS_NONE;
 	Token* next = lexer_peek(lexer);
@@ -592,7 +592,7 @@ parse_storage_class_specifier(Lexer* lexer) {
 //     storage-class-specifier declaration-specifiers_opt
 //     type-specifier declaration-specifiers_opt
 //     type-qualifier declaration-specifiers_opt
-MO_Parser_Result
+static MO_Parser_Result
 parse_declaration_specifiers(Lexer* lexer) {
 	MO_Parser_Result res = {0};
 
@@ -645,7 +645,7 @@ parse_declaration_specifiers(Lexer* lexer) {
 // parameter-declaration:
 //     declaration-specifiers declarator /* Named declarator */
 //     declaration-specifiers abstract-declarator_opt /* Anonymous declarator */
-MO_Parser_Result
+static MO_Parser_Result
 parse_parameter_declaration(Lexer* lexer, bool require_name) {
 	MO_Parser_Result res = {0};
 
@@ -668,7 +668,7 @@ parse_parameter_declaration(Lexer* lexer, bool require_name) {
 // parameter-list:
 //     parameter-declaration
 //     parameter-list , parameter-declaration
-MO_Parser_Result
+static MO_Parser_Result
 parse_parameter_list(Lexer* lexer, bool require_name) {
 	MO_Parser_Result list = { 0 };
 
@@ -702,7 +702,7 @@ parse_parameter_list(Lexer* lexer, bool require_name) {
 //     parameter-list
 //     parameter-list , ...
 // 
-MO_Parser_Result
+static MO_Parser_Result
 parse_parameter_type_list(Lexer* lexer, bool require_name) {
 	MO_Parser_Result res = {0};
 
@@ -736,7 +736,7 @@ parse_parameter_type_list(Lexer* lexer, bool require_name) {
 //     ( abstract-declarator )
 //     direct-abstract-declarator_opt [ constant-expression_opt ]
 //     direct-abstract-declarator_opt ( parameter-type-list_opt )
-MO_Parser_Result
+static MO_Parser_Result
 parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
 	MO_Parser_Result res = {0};
 	MO_Ast* node = 0;
@@ -841,7 +841,7 @@ parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
 // pointer:
 //     * type-qualifier-list_opt
 //     * type-qualifier-list_opt pointer
-MO_Parser_Result
+static MO_Parser_Result
 parse_pointer(Lexer* lexer) {
 	MO_Parser_Result res = require_token(lexer, '*');
 	if(res.status == MO_PARSER_STATUS_FATAL)
@@ -868,7 +868,7 @@ parse_pointer(Lexer* lexer) {
 // abstract-declarator: /* Used with anonymous declarators */
 //    pointer
 //    pointer_opt direct-abstract-declarator
-MO_Parser_Result
+static MO_Parser_Result
 parse_abstract_declarator(Lexer* lexer, bool require_name) {
 	MO_Parser_Result res = {0};
 
@@ -893,7 +893,7 @@ parse_abstract_declarator(Lexer* lexer, bool require_name) {
 
 // type-name:
 //    specifier-qualifier-list abstract-declarator_opt
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_type_name(Lexer* lexer) {
 	MO_Parser_Result spec_qual = parse_specifier_qualifier_list(lexer);
 	if(spec_qual.status == MO_PARSER_STATUS_FATAL)
@@ -920,7 +920,7 @@ parse_type_name(Lexer* lexer) {
 // postfix-expression -> identifier
 // postfix-expression ++
 // postfix-expression --
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_postfix_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1018,7 +1018,7 @@ parse_postfix_expression(Lexer* lexer) {
 // argument-expression-list:
 // assignment-expression
 // argument-expression-list , assignment-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_argument_expression_list(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 	MO_Ast* last_node = 0;
@@ -1054,7 +1054,7 @@ parse_argument_expression_list(Lexer* lexer) {
 // cast-expression 
 // sizeof unary-expression
 // sizeof ( type-name )
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_unary_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1139,7 +1139,7 @@ parse_unary_expression(Lexer* lexer) {
 // cast-expression:
 // unary-expression
 // ( type-name ) cast-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_cast_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1173,7 +1173,7 @@ parse_cast_expression(Lexer* lexer) {
 // multiplicative-expression * cast-expression
 // multiplicative-expression / cast-expression
 // multiplicative-expression % cast-expression
-MO_Parser_Result
+static MO_Parser_Result
 parse_multiplicative_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1206,7 +1206,7 @@ parse_multiplicative_expression(Lexer* lexer) {
 // multiplicative-expression
 // additive-expression + multiplicative-expression
 // additive-expression - multiplicative-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_additive_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1239,7 +1239,7 @@ parse_additive_expression(Lexer* lexer) {
 // additive-expression
 // shift-expression << additive-expression
 // shift-expression >> additive-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_shift_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1274,7 +1274,7 @@ parse_shift_expression(Lexer* lexer) {
 // relational-expression > shift-expression
 // relational-expression <= shift-expression
 // relational-expression >= shift-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_relational_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1306,7 +1306,7 @@ parse_relational_expression(Lexer* lexer) {
 // relational-expression
 // equality-expression == relational-expression
 // equality-expression != relational-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_equality_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1338,7 +1338,7 @@ parse_equality_expression(Lexer* lexer) {
 // AND-expression:
 // equality-expression
 // AND-expression & equality-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_and_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1370,7 +1370,7 @@ parse_and_expression(Lexer* lexer) {
 // exclusive-OR-expression:
 // AND-expression
 // exclusive-OR-expression ^ AND-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_exclusive_or_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1402,7 +1402,7 @@ parse_exclusive_or_expression(Lexer* lexer) {
 // inclusive-OR-expression:
 // exclusive-OR-expression
 // inclusive-OR-expression | exclusive-OR-expression
-MO_Parser_Result parse_inclusive_or_expression(Lexer* lexer) {
+static MO_Parser_Result parse_inclusive_or_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
 	res = parse_exclusive_or_expression(lexer);
@@ -1433,7 +1433,7 @@ MO_Parser_Result parse_inclusive_or_expression(Lexer* lexer) {
 // logical-AND-expression:
 // inclusive-OR-expression
 // logical-AND-expression && inclusive-OR-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_logical_and_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1465,7 +1465,7 @@ parse_logical_and_expression(Lexer* lexer) {
 // logical-OR-expression:
 // logical-AND-expression
 // logical-OR-expression || logical-AND-expression
-MO_Parser_Result parse_logical_or_expression(Lexer* lexer) {
+static MO_Parser_Result parse_logical_or_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
 	res = parse_logical_and_expression(lexer);
@@ -1496,7 +1496,7 @@ MO_Parser_Result parse_logical_or_expression(Lexer* lexer) {
 // conditional-expression:
 // logical-OR-expression
 // logical-OR-expression ? expression : conditional-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_conditional_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1536,7 +1536,7 @@ parse_conditional_expression(Lexer* lexer) {
 // assignment-expression:
 // conditional-expression (unary-expression is a more specific conditional-expression)
 // unary-expression assignment-operator assignment-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_assignment_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1569,7 +1569,7 @@ parse_assignment_expression(Lexer* lexer) {
 // constant
 // string-literal
 // ( expression )
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_primary_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1609,7 +1609,7 @@ parse_primary_expression(Lexer* lexer) {
 // expression:
 // assignment-expression
 // expression , assignment-expression
-MO_Parser_Result 
+static MO_Parser_Result 
 parse_expression(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 
@@ -1621,7 +1621,7 @@ parse_expression(Lexer* lexer) {
 	return res;
 }
 
-MO_Parser_Result
+static MO_Parser_Result
 parse_identifier(Lexer* lexer) {
 	MO_Parser_Result res = { 0 };
 	Token* t = lexer_next(lexer);
@@ -1643,7 +1643,7 @@ parse_identifier(Lexer* lexer) {
 // integer-constant
 // enumeration-constant (identifier)
 // character-constant
-MO_Parser_Result
+static MO_Parser_Result
 parse_constant(Lexer* lexer) {
 	MO_Parser_Result result = { 0 };
 
@@ -1692,15 +1692,15 @@ parse_constant(Lexer* lexer) {
 
 #define fprintf(...) fprintf(__VA_ARGS__); fflush(stdout)
 
-void parser_print_abstract_declarator(FILE*, MO_Ast*);
-void parser_print_specifiers_qualifiers(FILE* out, MO_Ast* sq);
+static void parser_print_abstract_declarator(FILE*, MO_Ast*);
+static void parser_print_specifiers_qualifiers(FILE* out, MO_Ast* sq);
 
-void
+static void
 parser_print_token(FILE* out, Token* t) {
 	fprintf(out, "%.*s", t->length, t->data);
 }
 
-void
+static void
 parser_print_type_qualifier_list(FILE* out, MO_Ast* q) {
 	if (!q) return;
 	assert(q->kind == MO_AST_TYPE_INFO);
@@ -1712,7 +1712,7 @@ parser_print_type_qualifier_list(FILE* out, MO_Ast* q) {
 	}
 }
 
-void
+static void
 parser_print_pointer(FILE* out, MO_Ast* pointer) {
 	fprintf(out, "*");
 	parser_print_type_qualifier_list(out, pointer->pointer.qualifiers);
@@ -1721,14 +1721,14 @@ parser_print_pointer(FILE* out, MO_Ast* pointer) {
 	}
 }
 
-void
+static void
 parser_print_param_decl(FILE* out, MO_Ast* decl) {
 	assert(decl->kind == MO_AST_PARAMETER_DECLARATION);
 	parser_print_specifiers_qualifiers(out, decl->parameter_decl.decl_specifiers);
 	parser_print_abstract_declarator(out, decl->parameter_decl.declarator);
 }
 
-void
+static void
 parser_print_parameter_list(FILE* out, MO_Ast* p) {
 	for (u64 i = 0; i < array_length(p->parameter_list.param_decl); ++i) {
 		if (i != 0) fprintf(out, ",");
@@ -1738,7 +1738,7 @@ parser_print_parameter_list(FILE* out, MO_Ast* p) {
 		fprintf(out, ", ...");
 }
 
-void
+static void
 parser_print_direct_abstract_declarator(FILE* out, MO_Ast* ast) {
 	
 	if (ast->direct_abstract_decl.type == MO_DIRECT_ABSTRACT_DECL_NONE) {
@@ -1773,7 +1773,7 @@ parser_print_direct_abstract_declarator(FILE* out, MO_Ast* ast) {
 	}
 }
 
-void
+static void
 parser_print_abstract_declarator(FILE* out, MO_Ast* a) {
 	if (a->abstract_type_decl.pointer) {
 		parser_print_pointer(out, a->abstract_type_decl.pointer);
@@ -1783,9 +1783,9 @@ parser_print_abstract_declarator(FILE* out, MO_Ast* a) {
 	}
 }
 
-void parser_print_struct_declaration(FILE* out, MO_Ast* s);
+static void parser_print_struct_declaration(FILE* out, MO_Ast* s);
 
-void
+static void
 parser_print_struct_declaration_list(FILE* out, MO_Ast* l) {
 	for(u64 i = 0; i < array_length(l->struct_declaration_list.list); ++i) {
 		if(i > 0) fprintf(out, "\n");
@@ -1793,13 +1793,13 @@ parser_print_struct_declaration_list(FILE* out, MO_Ast* l) {
 	}
 }
 
-void
+static void
 parser_print_struct_declarator(FILE* out, MO_Ast* d) {
 	assert(d->kind == MO_AST_TYPE_STRUCT_DECLARATOR);
 	parser_print_abstract_declarator(out, d->struct_declarator.declarator);
 }
 
-void
+static void
 parser_print_struct_declarator_bitfield(FILE* out, MO_Ast* d) {
 	assert(d->kind == MO_AST_TYPE_STRUCT_DECLARATOR_BITFIELD);
 	if(d->struct_declarator_bitfield.declarator) {
@@ -1809,7 +1809,7 @@ parser_print_struct_declarator_bitfield(FILE* out, MO_Ast* d) {
 	parser_print_ast(out, d->struct_declarator_bitfield.const_expr);
 }
 
-void
+static void
 parser_print_struct_declarator_list(FILE* out, MO_Ast* d) {
 	assert(d->kind == MO_AST_TYPE_STRUCT_DECLARATOR_LIST);
 	for(u64 i = 0; i < array_length(d->struct_declarator_list.list); ++i) {
@@ -1824,7 +1824,7 @@ parser_print_struct_declarator_list(FILE* out, MO_Ast* d) {
 	}
 }
 
-void
+static void
 parser_print_struct_declaration(FILE* out, MO_Ast* s) {
 	assert(s->kind == MO_AST_STRUCT_DECLARATION);
 	parser_print_specifiers_qualifiers(out, s->struct_declaration.spec_qual);
@@ -1833,7 +1833,7 @@ parser_print_struct_declaration(FILE* out, MO_Ast* s) {
 	fprintf(out, ";");
 }
 
-void
+static void
 parser_print_enumerator(FILE* out, MO_Ast* e) {
 	assert(e->kind == MO_AST_ENUMERATOR);
 	parser_print_token(out, e->enumerator.enum_constant);
@@ -1844,7 +1844,7 @@ parser_print_enumerator(FILE* out, MO_Ast* e) {
 	}
 }
 
-void
+static void
 parser_print_enumerator_list(FILE* out, MO_Ast* el) {
 	assert(el->kind == MO_AST_ENUMERATOR_LIST);
 	for(u64 i = 0; i < array_length(el->enumerator_list.list); ++i) {
@@ -1853,7 +1853,7 @@ parser_print_enumerator_list(FILE* out, MO_Ast* el) {
 	}
 }
 
-void
+static void
 parser_print_struct_description(FILE* out, MO_Ast* sd) {
 	assert(sd->kind == MO_AST_STRUCT_DECLARATION_LIST);
 	for(u64 i = 0; i < array_length(sd->struct_declaration_list.list); ++i) {
@@ -1862,7 +1862,7 @@ parser_print_struct_description(FILE* out, MO_Ast* sd) {
 	}
 }
 
-void
+static void
 parser_print_specifiers_qualifiers(FILE* out, MO_Ast* sq) {
 	parser_print_type_qualifier_list(out, sq);
 	switch (sq->specifier_qualifier.kind) {
@@ -1923,13 +1923,13 @@ parser_print_specifiers_qualifiers(FILE* out, MO_Ast* sq) {
 	}
 }
 
-void
+static void
 parser_print_typename(FILE* out, MO_Ast* node) {
 	parser_print_specifiers_qualifiers(out, node->type_name.qualifiers_specifiers);
 	parser_print_abstract_declarator(out, node->type_name.abstract_declarator);
 }
 
-void
+static void
 parser_print_ast(FILE* out, MO_Ast* ast) {
 	if (!ast) return;
 
