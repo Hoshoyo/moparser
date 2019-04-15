@@ -1,6 +1,5 @@
 #include "common.h"
 #include "lexer.h"
-#include <stdio.h>
 #include "light_array.h"
 
 typedef enum {
@@ -60,14 +59,14 @@ typedef enum {
 	POSTFIX_ARRAY_ACCESS = '[',
 	POSTFIX_PROC_CALL = '(',
 	POSTFIX_DOT = '.',
-	POSTFIX_ARROW = TOKEN_ARROW,
-	POSTFIX_PLUS_PLUS = TOKEN_PLUS_PLUS,
-	POSTFIX_MINUS_MINUS = TOKEN_MINUS_MINUS,
+	POSTFIX_ARROW = MO_TOKEN_ARROW,
+	POSTFIX_PLUS_PLUS = MO_TOKEN_PLUS_PLUS,
+	POSTFIX_MINUS_MINUS = MO_TOKEN_MINUS_MINUS,
 } Postfix_Operator;
 
 typedef enum {
-	UNOP_PLUS_PLUS = TOKEN_PLUS_PLUS,
-	UNOP_MINUS_MINUS = TOKEN_MINUS_MINUS,
+	UNOP_PLUS_PLUS = MO_TOKEN_PLUS_PLUS,
+	UNOP_MINUS_MINUS = MO_TOKEN_MINUS_MINUS,
 	UNOP_ADDRESS_OF = '&',
 	UNOP_DEREFERENCE = '*',
 	UNOP_PLUS = '+',
@@ -89,30 +88,30 @@ typedef enum {
 	BINOP_MULT  = '*',
 	BINOP_DIV   = '/',
 	BINOP_MOD   = '%',
-	BINOP_SHL   = TOKEN_BITSHIFT_LEFT,
-	BINOP_SHR   = TOKEN_BITSHIFT_RIGHT,
+	BINOP_SHL   = MO_TOKEN_BITSHIFT_LEFT,
+	BINOP_SHR   = MO_TOKEN_BITSHIFT_RIGHT,
 	BINOP_LT    = '<',
-	BINOP_LE    = TOKEN_LESS_EQUAL,
+	BINOP_LE    = MO_TOKEN_LESS_EQUAL,
 	BINOP_GT    = '>',
-	BINOP_GE    = TOKEN_GREATER_EQUAL,
-	BINOP_LOGICAL_EQ = TOKEN_EQUAL_EQUAL,
-	BINOP_LOGICAL_NE = TOKEN_NOT_EQUAL,
+	BINOP_GE    = MO_TOKEN_GREATER_EQUAL,
+	BINOP_LOGICAL_EQ = MO_TOKEN_EQUAL_EQUAL,
+	BINOP_LOGICAL_NE = MO_TOKEN_NOT_EQUAL,
 	BINOP_AND   = '&',
 	BINOP_OR    = '|',
 	BINOP_XOR   = '^',
 	BINOP_EQUAL = '=',
-	BINOP_PLUS_EQ = TOKEN_PLUS_EQUAL,
-	BINOP_MINUS_EQ = TOKEN_MINUS_EQUAL,
-	BINOP_TIMES_EQ = TOKEN_TIMES_EQUAL,
-	BINOP_DIV_EQ = TOKEN_DIV_EQUAL,
-	BINOP_MOD_EQ = TOKEN_MOD_EQUAL,
-	BINOP_XOR_EQ = TOKEN_XOR_EQUAL,
-	BINOP_OR_EQ = TOKEN_OR_EQUAL,
-	BINOP_AND_EQ = TOKEN_AND_EQUAL,
-	BINOP_SHL_EQ = TOKEN_SHL_EQUAL,
-	BINOP_SHR_EQ = TOKEN_SHR_EQUAL,
-	BINOP_EQUAL_EQUAL = TOKEN_EQUAL_EQUAL,
-	BINOP_NOT_EQUAL = TOKEN_NOT_EQUAL,
+	BINOP_PLUS_EQ = MO_TOKEN_PLUS_EQUAL,
+	BINOP_MINUS_EQ = MO_TOKEN_MINUS_EQUAL,
+	BINOP_TIMES_EQ = MO_TOKEN_TIMES_EQUAL,
+	BINOP_DIV_EQ = MO_TOKEN_DIV_EQUAL,
+	BINOP_MOD_EQ = MO_TOKEN_MOD_EQUAL,
+	BINOP_XOR_EQ = MO_TOKEN_XOR_EQUAL,
+	BINOP_OR_EQ = MO_TOKEN_OR_EQUAL,
+	BINOP_AND_EQ = MO_TOKEN_AND_EQUAL,
+	BINOP_SHL_EQ = MO_TOKEN_SHL_EQUAL,
+	BINOP_SHR_EQ = MO_TOKEN_SHR_EQUAL,
+	BINOP_EQUAL_EQUAL = MO_TOKEN_EQUAL_EQUAL,
+	BINOP_NOT_EQUAL = MO_TOKEN_NOT_EQUAL,
 } Binary_Operator;
 
 typedef enum {
@@ -316,42 +315,5 @@ typedef struct Ast_t {
 		Ast_Enumerator_List enumerator_list;
 	};
 } Ast;
-
-typedef enum {
-	PARSER_STATUS_OK = 0,
-	PARSER_STATUS_FATAL,
-} Parser_Status;
-
-typedef struct {
-	struct Ast_t* node;
-	Parser_Status status;
-	const char*   error_message;
-} Parser_Result;
-
-Parser_Result parse_type_name(Lexer* lexer);
-Parser_Result parse_postfix_expression(Lexer* lexer);
-Parser_Result parse_argument_expression_list(Lexer* lexer);
-Parser_Result parse_unary_expression(Lexer* lexer);
-Parser_Result parse_cast_expression(Lexer* lexer);
-Parser_Result parse_multiplicative_expression(Lexer* lexer);
-Parser_Result parse_additive_expression(Lexer* lexer);
-Parser_Result parse_shift_expression(Lexer* lexer);
-Parser_Result parse_relational_expression(Lexer* lexer);
-Parser_Result parse_equality_expression(Lexer* lexer);
-Parser_Result parse_and_expression(Lexer* lexer);
-Parser_Result parse_exclusive_or_expression(Lexer* lexer);
-Parser_Result parse_inclusive_or_expression(Lexer* lexer);
-Parser_Result parse_logical_and_expression(Lexer* lexer);
-Parser_Result parse_logical_or_expression(Lexer* lexer);
-Parser_Result parse_conditional_expression(Lexer* lexer);
-Parser_Result parse_assignment_expression(Lexer* lexer);
-Parser_Result parse_primary_expression(Lexer* lexer);
-Parser_Result parse_expression(Lexer* lexer);
-Parser_Result parse_constant(Lexer* lexer);
-Parser_Result parse_identifier(Lexer* lexer);
-Parser_Result parse_pointer(Lexer* lexer);
-Parser_Result parse_abstract_declarator(Lexer* lexer, bool require_name);
-Parser_Result parse_struct_declaration_list(Lexer* lexer);
-Parser_Result parse_constant_expression(Lexer* lexer);
 
 void parser_print_ast(FILE* out, Ast* ast);

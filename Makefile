@@ -1,2 +1,2 @@
 all:
-	gcc -g -Werror *.c -o bin/moparser
+	gcc -g -Werror main.c parser.c -o bin/moparser

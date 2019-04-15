@@ -4,6 +4,34 @@
 #include <stdlib.h>
 #include <assert.h>
 
+#include "lexer.c"
+
+MO_Parser_Result parse_type_name(Lexer* lexer);
+MO_Parser_Result parse_postfix_expression(Lexer* lexer);
+MO_Parser_Result parse_argument_expression_list(Lexer* lexer);
+MO_Parser_Result parse_unary_expression(Lexer* lexer);
+MO_Parser_Result parse_cast_expression(Lexer* lexer);
+MO_Parser_Result parse_multiplicative_expression(Lexer* lexer);
+MO_Parser_Result parse_additive_expression(Lexer* lexer);
+MO_Parser_Result parse_shift_expression(Lexer* lexer);
+MO_Parser_Result parse_relational_expression(Lexer* lexer);
+MO_Parser_Result parse_equality_expression(Lexer* lexer);
+MO_Parser_Result parse_and_expression(Lexer* lexer);
+MO_Parser_Result parse_exclusive_or_expression(Lexer* lexer);
+MO_Parser_Result parse_inclusive_or_expression(Lexer* lexer);
+MO_Parser_Result parse_logical_and_expression(Lexer* lexer);
+MO_Parser_Result parse_logical_or_expression(Lexer* lexer);
+MO_Parser_Result parse_conditional_expression(Lexer* lexer);
+MO_Parser_Result parse_assignment_expression(Lexer* lexer);
+MO_Parser_Result parse_primary_expression(Lexer* lexer);
+MO_Parser_Result parse_expression(Lexer* lexer);
+MO_Parser_Result parse_constant(Lexer* lexer);
+MO_Parser_Result parse_identifier(Lexer* lexer);
+MO_Parser_Result parse_pointer(Lexer* lexer);
+MO_Parser_Result parse_abstract_declarator(Lexer* lexer, bool require_name);
+MO_Parser_Result parse_struct_declaration_list(Lexer* lexer);
+MO_Parser_Result parse_constant_expression(Lexer* lexer);
+
 // Declarations
 // https://docs.microsoft.com/en-us/cpp/c-language/summary-of-declarations?view=vs-2017
 
@@ -25,7 +53,7 @@ is_type_name(Token* t) {
 
 static bool
 is_assignment_operator(Token* t) {
-	return t->flags & TOKEN_FLAG_ASSIGNMENT_OPERATOR;
+	return t->flags & MO_TOKEN_FLAG_ASSIGNMENT_OPERATOR;
 }
 
 static void*
@@ -43,18 +71,18 @@ parser_error_message(Lexer* lexer, const char* fmt, ...) {
 	return 0;
 }
 
-static Parser_Result 
-require_token(Lexer* lexer, Token_Type tt) {
-	Parser_Result result = { 0 };
+static MO_Parser_Result 
+require_token(Lexer* lexer, MO_Token_Type tt) {
+	MO_Parser_Result result = { 0 };
 	Token* n = lexer_next(lexer);
 	if (n->type != tt) {
-		result.status = PARSER_STATUS_FATAL;
+		result.status = MO_PARSER_STATUS_FATAL;
 		sprintf(parser_error_buffer, 
 			"%s:%d:%d: Syntax error: Required '%s', but got '%s'\n", 
 			lexer->filename, n->line, n->column, token_type_to_str(tt), token_to_str(n));
 		result.error_message = parser_error_buffer;
 	} else {
-		result.status = PARSER_STATUS_OK;
+		result.status = MO_PARSER_STATUS_OK;
 	}
 
 	return result;
@@ -67,21 +95,21 @@ require_token(Lexer* lexer, Token_Type tt) {
 Type_Primitive
 primitive_from_token(Token* t) {
 	switch (t->type) {
-		case TOKEN_KEYWORD_UNSIGNED:
+		case MO_TOKEN_KEYWORD_UNSIGNED:
 			return TYPE_PRIMITIVE_UNSIGNED;
-		case TOKEN_KEYWORD_SIGNED:
+		case MO_TOKEN_KEYWORD_SIGNED:
 			return TYPE_PRIMITIVE_SIGNED;
-		case TOKEN_KEYWORD_DOUBLE:
+		case MO_TOKEN_KEYWORD_DOUBLE:
 			return TYPE_PRIMITIVE_DOUBLE;
-		case TOKEN_KEYWORD_FLOAT:
+		case MO_TOKEN_KEYWORD_FLOAT:
 			return TYPE_PRIMITIVE_FLOAT;
-		case TOKEN_KEYWORD_LONG:
+		case MO_TOKEN_KEYWORD_LONG:
 			return TYPE_PRIMITIVE_LONG;
-		case TOKEN_KEYWORD_INT:
+		case MO_TOKEN_KEYWORD_INT:
 			return TYPE_PRIMITIVE_INT;
-		case TOKEN_KEYWORD_SHORT:
+		case MO_TOKEN_KEYWORD_SHORT:
 			return TYPE_PRIMITIVE_SHORT;
-		case TOKEN_KEYWORD_CHAR: 
+		case MO_TOKEN_KEYWORD_CHAR: 
 			return TYPE_PRIMITIVE_CHAR;
 		default:
 			assert(0); // Invalid code path
@@ -105,18 +133,18 @@ parser_type_primitive_get_info(Type_Primitive p) {
 // enumerator:
 //     enumeration-constant
 //     enumeration-constant = constant-expression
-Parser_Result
+MO_Parser_Result
 parse_enumerator(Lexer* lexer) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 
 	Token* enum_const = lexer_next(lexer);
-	if(enum_const->type != TOKEN_IDENTIFIER) {
-		res.status = PARSER_STATUS_FATAL;
+	if(enum_const->type != MO_TOKEN_IDENTIFIER) {
+		res.status = MO_PARSER_STATUS_FATAL;
 		// TODO(psv): raise error
 		return res;
 	}
 	
-	Parser_Result const_expr = {0};
+	MO_Parser_Result const_expr = {0};
 	if(lexer_peek(lexer)->type == '=') {
 		lexer_next(lexer);
 		const_expr = parse_constant_expression(lexer);
@@ -133,12 +161,12 @@ parse_enumerator(Lexer* lexer) {
 // enumerator-list:
 //     enumerator
 //     enumerator-list , enumerator
-Parser_Result
+MO_Parser_Result
 parse_enumerator_list(Lexer* lexer) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 
-	Parser_Result enumerator = parse_enumerator(lexer);
-	if(enumerator.status == PARSER_STATUS_FATAL)
+	MO_Parser_Result enumerator = parse_enumerator(lexer);
+	if(enumerator.status == MO_PARSER_STATUS_FATAL)
 		return res;
 	Ast_Enumerator* node = (Ast_Enumerator*)enumerator.node;
 
@@ -147,8 +175,8 @@ parse_enumerator_list(Lexer* lexer) {
 	
 	while(lexer_peek(lexer)->type == ',') {
 		lexer_next(lexer); // eat ,
-		Parser_Result e = parse_enumerator(lexer);
-		if(e.status == PARSER_STATUS_FATAL)
+		MO_Parser_Result e = parse_enumerator(lexer);
+		if(e.status == MO_PARSER_STATUS_FATAL)
 			break;
 		Ast_Enumerator* en = (Ast_Enumerator*)e.node;
 		array_push(list, en);
@@ -174,30 +202,30 @@ parse_enumerator_list(Lexer* lexer) {
 //     struct-or-union-specifier
 //     enum-specifier
 //     typedef-name
-Parser_Result
+MO_Parser_Result
 parse_type_specifier(Lexer* lexer, Ast* type) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 	Token* s = lexer_peek(lexer);
 	Ast* node = 0;
 
 	assert((type) ? type->kind == AST_TYPE_INFO : true);
 
 	switch(s->type) {
-		case TOKEN_KEYWORD_VOID:
+		case MO_TOKEN_KEYWORD_VOID:
 			lexer_next(lexer);
 			node = allocate_node();
 			node->kind = AST_TYPE_INFO;
 			node->specifier_qualifier.kind = TYPE_VOID;
 			break;
 
-		case TOKEN_KEYWORD_UNSIGNED:
-		case TOKEN_KEYWORD_SIGNED:
-		case TOKEN_KEYWORD_DOUBLE:
-		case TOKEN_KEYWORD_FLOAT:
-		case TOKEN_KEYWORD_LONG:
-		case TOKEN_KEYWORD_INT:
-		case TOKEN_KEYWORD_SHORT:
-		case TOKEN_KEYWORD_CHAR: {
+		case MO_TOKEN_KEYWORD_UNSIGNED:
+		case MO_TOKEN_KEYWORD_SIGNED:
+		case MO_TOKEN_KEYWORD_DOUBLE:
+		case MO_TOKEN_KEYWORD_FLOAT:
+		case MO_TOKEN_KEYWORD_LONG:
+		case MO_TOKEN_KEYWORD_INT:
+		case MO_TOKEN_KEYWORD_SHORT:
+		case MO_TOKEN_KEYWORD_CHAR: {
 			lexer_next(lexer);
 			Type_Primitive primitive = primitive_from_token(s);
 			assert(primitive != -1);
@@ -212,8 +240,8 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 			node->specifier_qualifier.kind = TYPE_PRIMITIVE;
 		} break;
 
-		case TOKEN_KEYWORD_UNION:
-		case TOKEN_KEYWORD_STRUCT: {
+		case MO_TOKEN_KEYWORD_UNION:
+		case MO_TOKEN_KEYWORD_STRUCT: {
 			Token* s_or_u = lexer_next(lexer);
 			if(type) {
 				node = type;
@@ -230,7 +258,7 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 			// 		struct-or-union identifier_opt { struct-declaration-list }
 			// 		struct-or-union identifier
 			Token* id = lexer_peek(lexer);
-			if(id->type == TOKEN_IDENTIFIER){
+			if(id->type == MO_TOKEN_IDENTIFIER){
 				lexer_next(lexer); // eat identifier
 			} else {
 				id = 0;
@@ -239,44 +267,44 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 				lexer_next(lexer);
 
 				// struct-declaration-list
-				Parser_Result decl_list = parse_struct_declaration_list(lexer);
-				if(decl_list.status == PARSER_STATUS_FATAL)
+				MO_Parser_Result decl_list = parse_struct_declaration_list(lexer);
+				if(decl_list.status == MO_PARSER_STATUS_FATAL)
 					return decl_list;
 
-				Parser_Result r = require_token(lexer, '}');
-				if(r.status == PARSER_STATUS_FATAL)
+				MO_Parser_Result r = require_token(lexer, '}');
+				if(r.status == MO_PARSER_STATUS_FATAL)
 					return r;
 
 				node->specifier_qualifier.struct_desc = decl_list.node;
 				node->specifier_qualifier.struct_name = id;
 			}
-			if(s_or_u->type == TOKEN_KEYWORD_STRUCT) {
+			if(s_or_u->type == MO_TOKEN_KEYWORD_STRUCT) {
 				node->specifier_qualifier.kind = TYPE_STRUCT;
-			} else if(s_or_u->type == TOKEN_KEYWORD_UNION) {
+			} else if(s_or_u->type == MO_TOKEN_KEYWORD_UNION) {
 				node->specifier_qualifier.kind = TYPE_UNION;
 			} else {
 				assert(0);
 				// TODO(psv): invalid code path
 			}
 		} break;
-		case TOKEN_KEYWORD_ENUM: {
+		case MO_TOKEN_KEYWORD_ENUM: {
 			// enum
 			lexer_next(lexer); // eat enum
 			Token* id = lexer_peek(lexer);
-			if(id->type == TOKEN_IDENTIFIER) {
+			if(id->type == MO_TOKEN_IDENTIFIER) {
 				lexer_next(lexer);
 			} else {
 				id = 0;
 			}
 			
-			Parser_Result enum_list = {0};
+			MO_Parser_Result enum_list = {0};
 			if(lexer_peek(lexer)->type == '{') {
 				lexer_next(lexer);
 				enum_list = parse_enumerator_list(lexer);
-				if(enum_list.status == PARSER_STATUS_FATAL)
+				if(enum_list.status == MO_PARSER_STATUS_FATAL)
 					return enum_list;
-				Parser_Result r = require_token(lexer, '}');
-				if(r.status == PARSER_STATUS_FATAL)
+				MO_Parser_Result r = require_token(lexer, '}');
+				if(r.status == MO_PARSER_STATUS_FATAL)
 					return r;
 			}
 
@@ -286,7 +314,7 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 			node->specifier_qualifier.enumerator_list = enum_list.node;
 			node->specifier_qualifier.enum_name = id;
 		} break;
-		case TOKEN_IDENTIFIER:{
+		case MO_TOKEN_IDENTIFIER:{
 		    // typedef-name
 			if(is_type_name(s)) {
 				lexer_next(lexer);
@@ -295,14 +323,14 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 				node->specifier_qualifier.kind = TYPE_ALIAS;
 				node->specifier_qualifier.alias = s;
 			} else {
-				res.status = PARSER_STATUS_FATAL;
+				res.status = MO_PARSER_STATUS_FATAL;
 				// TODO(psv): raise error
 				break;
 			}
 		} break;
 		default:
 			// TODO(psv): error message
-			res.status = PARSER_STATUS_FATAL;
+			res.status = MO_PARSER_STATUS_FATAL;
 			break;
 	}
 
@@ -314,13 +342,13 @@ parse_type_specifier(Lexer* lexer, Ast* type) {
 // type-qualifier:
 //     const
 //     volatile
-Parser_Result
+MO_Parser_Result
 parse_type_qualifier(Lexer* lexer, Ast* type) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 	Token* q = lexer_peek(lexer);
 
 	switch(q->type) {
-		case TOKEN_KEYWORD_CONST: {
+		case MO_TOKEN_KEYWORD_CONST: {
 			lexer_next(lexer);
 			if(type) {
 				type->specifier_qualifier.qualifiers |= TYPE_QUALIFIER_CONST;
@@ -333,7 +361,7 @@ parse_type_qualifier(Lexer* lexer, Ast* type) {
 				res.node = node;
 			}
 		} break;
-		case TOKEN_KEYWORD_VOLATILE: {
+		case MO_TOKEN_KEYWORD_VOLATILE: {
 			lexer_next(lexer);
 			if(type) {
 				type->specifier_qualifier.qualifiers |= TYPE_QUALIFIER_VOLATILE;
@@ -348,7 +376,7 @@ parse_type_qualifier(Lexer* lexer, Ast* type) {
 		} break;
 		default:{
 			// TODO(psv): error message
-			res.status = PARSER_STATUS_FATAL;
+			res.status = MO_PARSER_STATUS_FATAL;
 		}break;
 	}
 	return res;
@@ -357,28 +385,28 @@ parse_type_qualifier(Lexer* lexer, Ast* type) {
 // specifier-qualifier-list:
 // 	type-specifier specifier-qualifier-list_opt
 // 	type-qualifier specifier-qualifier-list_opt
-Parser_Result 
+MO_Parser_Result 
 parse_specifier_qualifier_list(Lexer* lexer) {
-	Parser_Result res = parse_type_qualifier(lexer, 0);
-	if(res.status == PARSER_STATUS_FATAL) {
+	MO_Parser_Result res = parse_type_qualifier(lexer, 0);
+	if(res.status == MO_PARSER_STATUS_FATAL) {
 		// try specifier
 		res = parse_type_specifier(lexer, 0);
 	}
 
-	if(res.status == PARSER_STATUS_FATAL) {
+	if(res.status == MO_PARSER_STATUS_FATAL) {
 		// TODO(psv): Error, expecting type qualifier or specifier but got something else
 		return res;
 	}
 
 	while(true) {
-		Parser_Result next = parse_type_qualifier(lexer, res.node);
-		if(next.status == PARSER_STATUS_FATAL) {
+		MO_Parser_Result next = parse_type_qualifier(lexer, res.node);
+		if(next.status == MO_PARSER_STATUS_FATAL) {
 			// try specifier
 			next = parse_type_specifier(lexer, res.node);
 		}
 
 		// no more type qualifiers or specifiers
-		if(next.status == PARSER_STATUS_FATAL)
+		if(next.status == MO_PARSER_STATUS_FATAL)
 			break;
 
 		res = next;
@@ -390,14 +418,14 @@ parse_specifier_qualifier_list(Lexer* lexer) {
 // type-qualifier-list:
 //     type-qualifier
 //     type-qualifier-list type-qualifier
-Parser_Result
+MO_Parser_Result
 parse_type_qualifier_list(Lexer* lexer) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 
 	res = parse_type_qualifier(lexer, 0);
 	while(true) {
-		Parser_Result next = parse_type_qualifier(lexer, res.node);
-		if(next.status == PARSER_STATUS_FATAL)
+		MO_Parser_Result next = parse_type_qualifier(lexer, res.node);
+		if(next.status == MO_PARSER_STATUS_FATAL)
 			break;
 		res.node = next.node;
 	}
@@ -405,7 +433,7 @@ parse_type_qualifier_list(Lexer* lexer) {
 	return res;
 }
 
-Parser_Result
+MO_Parser_Result
 parse_constant_expression(Lexer* lexer) {
 	return parse_conditional_expression(lexer);
 }
@@ -413,18 +441,18 @@ parse_constant_expression(Lexer* lexer) {
 // struct-declarator:
 //     declarator
 //     declarator_opt : constant-expression
-Parser_Result
+MO_Parser_Result
 parse_struct_declarator(Lexer* lexer) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 
-	Parser_Result decl = {0};
-	Parser_Result const_expr = {0};
+	MO_Parser_Result decl = {0};
+	MO_Parser_Result const_expr = {0};
 
 	bool is_bitfield = false;
 
 	if(lexer_peek(lexer)->type != ':') {
 		decl = parse_abstract_declarator(lexer, true);
-		if(decl.status == PARSER_STATUS_FATAL)
+		if(decl.status == MO_PARSER_STATUS_FATAL)
 			return decl;
 	}
 
@@ -432,7 +460,7 @@ parse_struct_declarator(Lexer* lexer) {
 		is_bitfield = true;
 		lexer_next(lexer);
 		const_expr = parse_constant_expression(lexer);
-		if(const_expr.status == PARSER_STATUS_FATAL)
+		if(const_expr.status == MO_PARSER_STATUS_FATAL)
 			return const_expr;
 	}
 	
@@ -453,15 +481,15 @@ parse_struct_declarator(Lexer* lexer) {
 // struct-declarator-list:
 //     struct-declarator 
 //     struct-declarator-list , struct-declarator
-Parser_Result
+MO_Parser_Result
 parse_struct_declarator_list(Lexer* lexer) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 
 	Ast** list = 0;
 
 	while(true) {
-		Parser_Result r = parse_struct_declarator(lexer);
-		if(r.status == PARSER_STATUS_FATAL)
+		MO_Parser_Result r = parse_struct_declarator(lexer);
+		if(r.status == MO_PARSER_STATUS_FATAL)
 			return r;
 
 		if(!list) list = array_new(Ast*);
@@ -477,19 +505,19 @@ parse_struct_declarator_list(Lexer* lexer) {
 	return res;
 }
 
-Parser_Result
+MO_Parser_Result
 parse_struct_declaration(Lexer* lexer) {
-	Parser_Result spec_qual = parse_specifier_qualifier_list(lexer);
-	if(spec_qual.status == PARSER_STATUS_FATAL)
+	MO_Parser_Result spec_qual = parse_specifier_qualifier_list(lexer);
+	if(spec_qual.status == MO_PARSER_STATUS_FATAL)
 		return spec_qual;
-	Parser_Result struct_decl_list = parse_struct_declarator_list(lexer);
-	if(struct_decl_list.status == PARSER_STATUS_FATAL)
+	MO_Parser_Result struct_decl_list = parse_struct_declarator_list(lexer);
+	if(struct_decl_list.status == MO_PARSER_STATUS_FATAL)
 		return struct_decl_list;
-	Parser_Result n = require_token(lexer, ';');
-	if(n.status == PARSER_STATUS_FATAL)
+	MO_Parser_Result n = require_token(lexer, ';');
+	if(n.status == MO_PARSER_STATUS_FATAL)
 		return n;
 	
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 	res.node = allocate_node();
 	res.node->kind = AST_STRUCT_DECLARATION;
 	res.node->struct_declaration.spec_qual = spec_qual.node;
@@ -504,23 +532,23 @@ parse_struct_declaration(Lexer* lexer) {
 //
 // struct-declaration:
 //     specifier-qualifier-list struct-declarator-list ;
-Parser_Result
+MO_Parser_Result
 parse_struct_declaration_list(Lexer* lexer) {
 
-	Parser_Result r = parse_struct_declaration(lexer);
-	if(r.status == PARSER_STATUS_FATAL)
+	MO_Parser_Result r = parse_struct_declaration(lexer);
+	if(r.status == MO_PARSER_STATUS_FATAL)
 		return r;
 
 	Ast** list = array_new(Ast*);
 	array_push(list, r.node);
 
 	while(true) {
-		Parser_Result r = parse_struct_declaration(lexer);
-		if(r.status == PARSER_STATUS_FATAL) break;
+		MO_Parser_Result r = parse_struct_declaration(lexer);
+		if(r.status == MO_PARSER_STATUS_FATAL) break;
 		array_push(list, r.node);
 	}
 	
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 	res.node = allocate_node();
 	res.node->kind = AST_STRUCT_DECLARATION_LIST;
 	res.node->struct_declaration_list.list = list;
@@ -541,15 +569,15 @@ parse_storage_class_specifier(Lexer* lexer) {
 	Token* next = lexer_peek(lexer);
 	
 	switch(next->type) {
-		case TOKEN_KEYWORD_AUTO:
+		case MO_TOKEN_KEYWORD_AUTO:
 			res = STORAGE_CLASS_AUTO; break;
-		case TOKEN_KEYWORD_STATIC:
+		case MO_TOKEN_KEYWORD_STATIC:
 			res = STORAGE_CLASS_STATIC; break;
-		case TOKEN_KEYWORD_REGISTER:
+		case MO_TOKEN_KEYWORD_REGISTER:
 			res = STORAGE_CLASS_REGISTER; break;
-		case TOKEN_KEYWORD_EXTERN:
+		case MO_TOKEN_KEYWORD_EXTERN:
 			res = STORAGE_CLASS_EXTERN; break;
-		case TOKEN_KEYWORD_TYPEDEF:
+		case MO_TOKEN_KEYWORD_TYPEDEF:
 			res = STORAGE_CLASS_TYPEDEF; break;
 		default: return res;
 	}
@@ -561,9 +589,9 @@ parse_storage_class_specifier(Lexer* lexer) {
 //     storage-class-specifier declaration-specifiers_opt
 //     type-specifier declaration-specifiers_opt
 //     type-qualifier declaration-specifiers_opt
-Parser_Result
+MO_Parser_Result
 parse_declaration_specifiers(Lexer* lexer) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 
 	Ast* type = 0;
 	Storage_Class sc = 0;
@@ -572,13 +600,13 @@ parse_declaration_specifiers(Lexer* lexer) {
 		Storage_Class s = parse_storage_class_specifier(lexer);
 		sc |= s;
 		if(s == STORAGE_CLASS_NONE) {
-			Parser_Result type_spec = parse_type_specifier(lexer, type);
-			if(type_spec.status != PARSER_STATUS_FATAL) {
+			MO_Parser_Result type_spec = parse_type_specifier(lexer, type);
+			if(type_spec.status != MO_PARSER_STATUS_FATAL) {
 				// it was a type specifier
 				type = type_spec.node;
 			} else {
-				Parser_Result type_qual = parse_type_qualifier(lexer, type);
-				if(type_qual.status != PARSER_STATUS_FATAL) {
+				MO_Parser_Result type_qual = parse_type_qualifier(lexer, type);
+				if(type_qual.status != MO_PARSER_STATUS_FATAL) {
 					// it was a type qualifier
 					type = type_qual.node;
 				} else {
@@ -614,16 +642,16 @@ parse_declaration_specifiers(Lexer* lexer) {
 // parameter-declaration:
 //     declaration-specifiers declarator /* Named declarator */
 //     declaration-specifiers abstract-declarator_opt /* Anonymous declarator */
-Parser_Result
+MO_Parser_Result
 parse_parameter_declaration(Lexer* lexer, bool require_name) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 
-	Parser_Result decl_spec = parse_declaration_specifiers(lexer);
-	if(decl_spec.status == PARSER_STATUS_FATAL)
+	MO_Parser_Result decl_spec = parse_declaration_specifiers(lexer);
+	if(decl_spec.status == MO_PARSER_STATUS_FATAL)
 		return decl_spec;
 
-	Parser_Result declarator = parse_abstract_declarator(lexer, require_name);
-	if(res.status == PARSER_STATUS_FATAL)
+	MO_Parser_Result declarator = parse_abstract_declarator(lexer, require_name);
+	if(res.status == MO_PARSER_STATUS_FATAL)
 		return res;
 
 	res.node = allocate_node();
@@ -637,16 +665,16 @@ parse_parameter_declaration(Lexer* lexer, bool require_name) {
 // parameter-list:
 //     parameter-declaration
 //     parameter-list , parameter-declaration
-Parser_Result
+MO_Parser_Result
 parse_parameter_list(Lexer* lexer, bool require_name) {
-	Parser_Result list = { 0 };
+	MO_Parser_Result list = { 0 };
 
 	while (true) {
 		if(lexer_peek(lexer)->type == '.')
 			break;
 
-		Parser_Result res = parse_parameter_declaration(lexer, require_name);
-		if (res.status == PARSER_STATUS_FATAL)
+		MO_Parser_Result res = parse_parameter_declaration(lexer, require_name);
+		if (res.status == MO_PARSER_STATUS_FATAL)
 			break;
 
 		if (!list.node) {
@@ -671,23 +699,23 @@ parse_parameter_list(Lexer* lexer, bool require_name) {
 //     parameter-list
 //     parameter-list , ...
 // 
-Parser_Result
+MO_Parser_Result
 parse_parameter_type_list(Lexer* lexer, bool require_name) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 
 	res = parse_parameter_list(lexer, require_name);
-	if (res.status == PARSER_STATUS_FATAL) {
+	if (res.status == MO_PARSER_STATUS_FATAL) {
 		return res;
 	}
 
 	if (lexer_peek(lexer)->type == '.') {
 		// Require three '.'
 		lexer_next(lexer);
-		Parser_Result status = require_token(lexer, '.');
-		if (status.status == PARSER_STATUS_FATAL)
+		MO_Parser_Result status = require_token(lexer, '.');
+		if (status.status == MO_PARSER_STATUS_FATAL)
 			return status;
 		status = require_token(lexer, '.');
-		if (status.status == PARSER_STATUS_FATAL)
+		if (status.status == MO_PARSER_STATUS_FATAL)
 			return status;
 
 		if (res.node) {
@@ -705,29 +733,29 @@ parse_parameter_type_list(Lexer* lexer, bool require_name) {
 //     ( abstract-declarator )
 //     direct-abstract-declarator_opt [ constant-expression_opt ]
 //     direct-abstract-declarator_opt ( parameter-type-list_opt )
-Parser_Result
+MO_Parser_Result
 parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 	Ast* node = 0;
 
 	while (true) {
 		Token* name = 0;
 		Token* next = lexer_peek(lexer);
-		if (next->type == TOKEN_IDENTIFIER) {
+		if (next->type == MO_TOKEN_IDENTIFIER) {
 			name = lexer_next(lexer);
 		} else {
 			if(require_name) {
 				// TODO(psv): raise error here, name required
-				res.status = PARSER_STATUS_FATAL;
+				res.status = MO_PARSER_STATUS_FATAL;
 				return res;
 			}
 		}
 		if (next->type == '[') {
 			// direct-abstract-declarator_opt is empty
 			lexer_next(lexer);
-			Parser_Result const_expr = parse_constant_expression(lexer);
-			Parser_Result cbracket = require_token(lexer, ']');
-			if (cbracket.status == PARSER_STATUS_FATAL) {
+			MO_Parser_Result const_expr = parse_constant_expression(lexer);
+			MO_Parser_Result cbracket = require_token(lexer, ']');
+			if (cbracket.status == MO_PARSER_STATUS_FATAL) {
 				// TODO(psv): raise error
 				return cbracket;
 			}
@@ -749,9 +777,9 @@ parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
 			next = lexer_peek(lexer);
 			if (next->type == '*' || next->type == '(' || next->type == '[') {
 				// it is another abstract-declarator
-				Parser_Result abst_decl = parse_abstract_declarator(lexer, false);
-				Parser_Result r = require_token(lexer, ')');
-				if (r.status == PARSER_STATUS_FATAL) {
+				MO_Parser_Result abst_decl = parse_abstract_declarator(lexer, false);
+				MO_Parser_Result r = require_token(lexer, ')');
+				if (r.status == MO_PARSER_STATUS_FATAL) {
 					// TODO(psv): raise error
 					return r;
 				}
@@ -771,9 +799,9 @@ parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
 				}
 			} else {
 				// it is a parameter-type-list_opt
-				Parser_Result params = parse_parameter_type_list(lexer, false);
-				Parser_Result r = require_token(lexer, ')'); // end of parameter list
-				if (r.status == PARSER_STATUS_FATAL) {
+				MO_Parser_Result params = parse_parameter_type_list(lexer, false);
+				MO_Parser_Result r = require_token(lexer, ')'); // end of parameter list
+				if (r.status == MO_PARSER_STATUS_FATAL) {
 					// TODO(psv): raise error
 					return r;
 				}
@@ -810,21 +838,21 @@ parse_direct_abstract_declarator(Lexer* lexer, bool require_name) {
 // pointer:
 //     * type-qualifier-list_opt
 //     * type-qualifier-list_opt pointer
-Parser_Result
+MO_Parser_Result
 parse_pointer(Lexer* lexer) {
-	Parser_Result res = require_token(lexer, '*');
-	if(res.status == PARSER_STATUS_FATAL)
+	MO_Parser_Result res = require_token(lexer, '*');
+	if(res.status == MO_PARSER_STATUS_FATAL)
 		return res;
 
-	Parser_Result type_qual_list = parse_type_qualifier_list(lexer);
+	MO_Parser_Result type_qual_list = parse_type_qualifier_list(lexer);
 
 	Ast* node = allocate_node();
 	node->kind = AST_TYPE_POINTER;
 	node->pointer.qualifiers = type_qual_list.node;
 
 	if(lexer_peek(lexer)->type == '*') {
-		Parser_Result ptr = parse_pointer(lexer);
-		if(ptr.status == PARSER_STATUS_FATAL)
+		MO_Parser_Result ptr = parse_pointer(lexer);
+		if(ptr.status == MO_PARSER_STATUS_FATAL)
 			return ptr;
 		node->pointer.next = ptr.node;
 	}
@@ -837,17 +865,17 @@ parse_pointer(Lexer* lexer) {
 // abstract-declarator: /* Used with anonymous declarators */
 //    pointer
 //    pointer_opt direct-abstract-declarator
-Parser_Result
+MO_Parser_Result
 parse_abstract_declarator(Lexer* lexer, bool require_name) {
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 
 	if(lexer_peek(lexer)->type == '*') {
 		res = parse_pointer(lexer);
 	}
 
 	// direct-abstract-declarator
-	Parser_Result dabstd = parse_direct_abstract_declarator(lexer, require_name);
-	if (dabstd.status == PARSER_STATUS_FATAL)
+	MO_Parser_Result dabstd = parse_direct_abstract_declarator(lexer, require_name);
+	if (dabstd.status == MO_PARSER_STATUS_FATAL)
 		return dabstd;
 
 	Ast* node = allocate_node();
@@ -862,17 +890,17 @@ parse_abstract_declarator(Lexer* lexer, bool require_name) {
 
 // type-name:
 //    specifier-qualifier-list abstract-declarator_opt
-Parser_Result 
+MO_Parser_Result 
 parse_type_name(Lexer* lexer) {
-	Parser_Result spec_qual = parse_specifier_qualifier_list(lexer);
-	if(spec_qual.status == PARSER_STATUS_FATAL)
+	MO_Parser_Result spec_qual = parse_specifier_qualifier_list(lexer);
+	if(spec_qual.status == MO_PARSER_STATUS_FATAL)
 		return spec_qual;
 	
-	Parser_Result abst_decl = parse_abstract_declarator(lexer, false);
-	if(abst_decl.status == PARSER_STATUS_FATAL)
+	MO_Parser_Result abst_decl = parse_abstract_declarator(lexer, false);
+	if(abst_decl.status == MO_PARSER_STATUS_FATAL)
 		return abst_decl;
 
-	Parser_Result res = {0};
+	MO_Parser_Result res = {0};
 	res.node = allocate_node();
 	res.node->kind = AST_TYPE_NAME;
 	res.node->type_name.qualifiers_specifiers = spec_qual.node;
@@ -889,9 +917,9 @@ parse_type_name(Lexer* lexer) {
 // postfix-expression -> identifier
 // postfix-expression ++
 // postfix-expression --
-Parser_Result 
+MO_Parser_Result 
 parse_postfix_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	res = parse_primary_expression(lexer);
 
@@ -905,10 +933,10 @@ parse_postfix_expression(Lexer* lexer) {
 			lexer_next(lexer);
 			res = parse_expression(lexer);
 			Ast* right = res.node;
-			if (res.status == PARSER_STATUS_FATAL)
+			if (res.status == MO_PARSER_STATUS_FATAL)
 				return res;
 			res = require_token(lexer, ']');
-			if (res.status == PARSER_STATUS_FATAL)
+			if (res.status == MO_PARSER_STATUS_FATAL)
 				return res;
 			Ast* node = allocate_node();
 			node->kind = AST_EXPRESSION_POSTFIX_BINARY;
@@ -925,7 +953,7 @@ parse_postfix_expression(Lexer* lexer) {
 				right = res.node;
 			}
 			res = require_token(lexer, ')');
-			if (res.status == PARSER_STATUS_FATAL)
+			if (res.status == MO_PARSER_STATUS_FATAL)
 				return res;
 			Ast* node = allocate_node();
 			node->kind = AST_EXPRESSION_POSTFIX_BINARY;
@@ -937,7 +965,7 @@ parse_postfix_expression(Lexer* lexer) {
 		case '.': {
 			lexer_next(lexer);
 			res = parse_identifier(lexer);
-			if (res.status == PARSER_STATUS_FATAL)
+			if (res.status == MO_PARSER_STATUS_FATAL)
 				return res;
 
 			Ast* node = allocate_node();
@@ -947,10 +975,10 @@ parse_postfix_expression(Lexer* lexer) {
 			node->expression_postfix_binary.po = POSTFIX_DOT;
 			res.node = node;
 		} break;
-		case TOKEN_ARROW: {
+		case MO_TOKEN_ARROW: {
 			lexer_next(lexer);
 			res = parse_identifier(lexer);
-			if (res.status == PARSER_STATUS_FATAL)
+			if (res.status == MO_PARSER_STATUS_FATAL)
 				return res;
 			Ast* node = allocate_node();
 			node->kind = AST_EXPRESSION_POSTFIX_BINARY;
@@ -959,7 +987,7 @@ parse_postfix_expression(Lexer* lexer) {
 			node->expression_postfix_binary.po = POSTFIX_ARROW;
 			res.node = node;
 		} break;
-		case TOKEN_PLUS_PLUS: {
+		case MO_TOKEN_PLUS_PLUS: {
 			lexer_next(lexer);
 			Ast* node = allocate_node();
 			node->kind = AST_EXPRESSION_POSTFIX_UNARY;
@@ -967,7 +995,7 @@ parse_postfix_expression(Lexer* lexer) {
 			node->expression_postfix_unary.po = POSTFIX_PLUS_PLUS;
 			res.node = node;
 		} break;
-		case TOKEN_MINUS_MINUS: {
+		case MO_TOKEN_MINUS_MINUS: {
 			lexer_next(lexer);
 			Ast* node = allocate_node();
 			node->kind = AST_EXPRESSION_POSTFIX_UNARY;
@@ -987,13 +1015,13 @@ parse_postfix_expression(Lexer* lexer) {
 // argument-expression-list:
 // assignment-expression
 // argument-expression-list , assignment-expression
-Parser_Result 
+MO_Parser_Result 
 parse_argument_expression_list(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 	Ast* last_node = 0;
 
 	res = parse_assignment_expression(lexer);
-	if (res.status == PARSER_STATUS_FATAL)
+	if (res.status == MO_PARSER_STATUS_FATAL)
 		return res;
 
 	Ast* left = res.node;
@@ -1002,7 +1030,7 @@ parse_argument_expression_list(Lexer* lexer) {
 	{
 		lexer_next(lexer);
 
-		Parser_Result right = parse_assignment_expression(lexer);
+		MO_Parser_Result right = parse_assignment_expression(lexer);
 
 		Ast* node = allocate_node();
 		node->kind = AST_EXPRESSION_ARGUMENT_LIST;
@@ -1023,17 +1051,17 @@ parse_argument_expression_list(Lexer* lexer) {
 // cast-expression 
 // sizeof unary-expression
 // sizeof ( type-name )
-Parser_Result 
+MO_Parser_Result 
 parse_unary_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	Token* next = lexer_peek(lexer);
 
 	switch(next->type) {
-		case TOKEN_PLUS_PLUS:{
+		case MO_TOKEN_PLUS_PLUS:{
 			lexer_next(lexer);
-			Parser_Result expr = parse_unary_expression(lexer);
-			if(expr.status == PARSER_STATUS_FATAL)
+			MO_Parser_Result expr = parse_unary_expression(lexer);
+			if(expr.status == MO_PARSER_STATUS_FATAL)
 				return res;
 
 			res.node = allocate_node();
@@ -1041,10 +1069,10 @@ parse_unary_expression(Lexer* lexer) {
 			res.node->expression_unary.expr = expr.node;
 			res.node->expression_unary.uo = UNOP_PLUS_PLUS;
 		}break;
-		case TOKEN_MINUS_MINUS: {
+		case MO_TOKEN_MINUS_MINUS: {
 			lexer_next(lexer);
-			Parser_Result expr = parse_unary_expression(lexer);
-			if(expr.status == PARSER_STATUS_FATAL)
+			MO_Parser_Result expr = parse_unary_expression(lexer);
+			if(expr.status == MO_PARSER_STATUS_FATAL)
 				return res;
 
 			res.node = allocate_node();
@@ -1060,8 +1088,8 @@ parse_unary_expression(Lexer* lexer) {
 		case '~':
 		case '!': {
 			lexer_next(lexer);
-			Parser_Result expr = parse_cast_expression(lexer);
-			if(expr.status == PARSER_STATUS_FATAL)
+			MO_Parser_Result expr = parse_cast_expression(lexer);
+			if(expr.status == MO_PARSER_STATUS_FATAL)
 				return expr;
 
 			res.node = allocate_node();
@@ -1070,17 +1098,17 @@ parse_unary_expression(Lexer* lexer) {
 			res.node->expression_unary.uo = (Unary_Operator)next->type;
 		} break;
 
-		case TOKEN_KEYWORD_SIZEOF: {
+		case MO_TOKEN_KEYWORD_SIZEOF: {
 			lexer_next(lexer);
 			Token* next = lexer_peek(lexer);
 			if(next->type == '(') {
 				lexer_next(lexer); // eat (
-				Parser_Result r = parse_type_name(lexer);
-				if(r.status == PARSER_STATUS_FATAL)
+				MO_Parser_Result r = parse_type_name(lexer);
+				if(r.status == MO_PARSER_STATUS_FATAL)
 					return r;
 				
-				Parser_Result n = require_token(lexer, ')');
-				if(n.status == PARSER_STATUS_FATAL)
+				MO_Parser_Result n = require_token(lexer, ')');
+				if(n.status == MO_PARSER_STATUS_FATAL)
 					return n;
 					
 				res.node = allocate_node();
@@ -1088,8 +1116,8 @@ parse_unary_expression(Lexer* lexer) {
 				res.node->expression_sizeof.is_type_name = true;
 				res.node->expression_sizeof.type = r.node;
 			} else {
-				Parser_Result r = parse_unary_expression(lexer);
-				if(r.status == PARSER_STATUS_FATAL)
+				MO_Parser_Result r = parse_unary_expression(lexer);
+				if(r.status == MO_PARSER_STATUS_FATAL)
 					return r;
 				res.node = allocate_node();
 				res.node->kind = AST_EXPRESSION_SIZEOF;
@@ -1108,22 +1136,22 @@ parse_unary_expression(Lexer* lexer) {
 // cast-expression:
 // unary-expression
 // ( type-name ) cast-expression
-Parser_Result 
+MO_Parser_Result 
 parse_cast_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	Token* next = lexer_peek(lexer);
 	if(next->type == '(' && is_type_name(lexer_peek_n(lexer, 1))) {
 		lexer_next(lexer); // eat '('
-		Parser_Result type_name = parse_type_name(lexer);
-		if(type_name.status == PARSER_STATUS_FATAL)
+		MO_Parser_Result type_name = parse_type_name(lexer);
+		if(type_name.status == MO_PARSER_STATUS_FATAL)
 			return res;
 		res = require_token(lexer, ')');
-		if (res.status == PARSER_STATUS_FATAL)
+		if (res.status == MO_PARSER_STATUS_FATAL)
 			return res;
 
-		Parser_Result expr = parse_cast_expression(lexer);
-		if(expr.status == PARSER_STATUS_FATAL)
+		MO_Parser_Result expr = parse_cast_expression(lexer);
+		if(expr.status == MO_PARSER_STATUS_FATAL)
 			return res;
 
 		res.node = allocate_node();
@@ -1142,18 +1170,18 @@ parse_cast_expression(Lexer* lexer) {
 // multiplicative-expression * cast-expression
 // multiplicative-expression / cast-expression
 // multiplicative-expression % cast-expression
-Parser_Result
+MO_Parser_Result
 parse_multiplicative_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	res = parse_cast_expression(lexer);
 
-	if (res.status == PARSER_STATUS_OK) {
+	if (res.status == MO_PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
 			if (op->type == '*' || op->type == '/' || op->type == '%') {
 				lexer_next(lexer);
-				Parser_Result right = parse_cast_expression(lexer);
+				MO_Parser_Result right = parse_cast_expression(lexer);
 
 				// Construct the node
 				Ast* node = allocate_node();
@@ -1175,18 +1203,18 @@ parse_multiplicative_expression(Lexer* lexer) {
 // multiplicative-expression
 // additive-expression + multiplicative-expression
 // additive-expression - multiplicative-expression
-Parser_Result 
+MO_Parser_Result 
 parse_additive_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	res = parse_multiplicative_expression(lexer);
 
-	if (res.status == PARSER_STATUS_OK) {
+	if (res.status == MO_PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
 			if (op->type == '+' || op->type == '-') {
 				lexer_next(lexer);
-				Parser_Result right = parse_multiplicative_expression(lexer);
+				MO_Parser_Result right = parse_multiplicative_expression(lexer);
 
 				// Construct the node
 				Ast* node = allocate_node();
@@ -1208,18 +1236,18 @@ parse_additive_expression(Lexer* lexer) {
 // additive-expression
 // shift-expression << additive-expression
 // shift-expression >> additive-expression
-Parser_Result 
+MO_Parser_Result 
 parse_shift_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	res = parse_additive_expression(lexer);
 
-	if (res.status == PARSER_STATUS_OK) {
+	if (res.status == MO_PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
-			if (op->type == TOKEN_BITSHIFT_LEFT || op->type == TOKEN_BITSHIFT_RIGHT) {
+			if (op->type == MO_TOKEN_BITSHIFT_LEFT || op->type == MO_TOKEN_BITSHIFT_RIGHT) {
 				lexer_next(lexer);
-				Parser_Result right = parse_additive_expression(lexer);
+				MO_Parser_Result right = parse_additive_expression(lexer);
 
 				// Construct the node
 				Ast* node = allocate_node();
@@ -1243,18 +1271,18 @@ parse_shift_expression(Lexer* lexer) {
 // relational-expression > shift-expression
 // relational-expression <= shift-expression
 // relational-expression >= shift-expression
-Parser_Result 
+MO_Parser_Result 
 parse_relational_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	res = parse_shift_expression(lexer);
 
-	if (res.status == PARSER_STATUS_OK) {
+	if (res.status == MO_PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
-			if (op->type == '<' || op->type == '>' || op->type == TOKEN_LESS_EQUAL || op->type == TOKEN_GREATER_EQUAL) {
+			if (op->type == '<' || op->type == '>' || op->type == MO_TOKEN_LESS_EQUAL || op->type == MO_TOKEN_GREATER_EQUAL) {
 				lexer_next(lexer);
-				Parser_Result right = parse_shift_expression(lexer);
+				MO_Parser_Result right = parse_shift_expression(lexer);
 
 				// Construct the node
 				Ast* node = allocate_node();
@@ -1275,18 +1303,18 @@ parse_relational_expression(Lexer* lexer) {
 // relational-expression
 // equality-expression == relational-expression
 // equality-expression != relational-expression
-Parser_Result 
+MO_Parser_Result 
 parse_equality_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	res = parse_relational_expression(lexer);
 
-	if (res.status == PARSER_STATUS_OK) {
+	if (res.status == MO_PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
-			if (op->type == TOKEN_EQUAL_EQUAL || op->type == TOKEN_NOT_EQUAL) {
+			if (op->type == MO_TOKEN_EQUAL_EQUAL || op->type == MO_TOKEN_NOT_EQUAL) {
 				lexer_next(lexer);
-				Parser_Result right = parse_relational_expression(lexer);
+				MO_Parser_Result right = parse_relational_expression(lexer);
 
 				// Construct the node
 				Ast* node = allocate_node();
@@ -1307,18 +1335,18 @@ parse_equality_expression(Lexer* lexer) {
 // AND-expression:
 // equality-expression
 // AND-expression & equality-expression
-Parser_Result 
+MO_Parser_Result 
 parse_and_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	res = parse_equality_expression(lexer);
 
-	if (res.status == PARSER_STATUS_OK) {
+	if (res.status == MO_PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
 			if (op->type == '&') {
 				lexer_next(lexer);
-				Parser_Result right = parse_equality_expression(lexer);
+				MO_Parser_Result right = parse_equality_expression(lexer);
 
 				// Construct the node
 				Ast* node = allocate_node();
@@ -1339,18 +1367,18 @@ parse_and_expression(Lexer* lexer) {
 // exclusive-OR-expression:
 // AND-expression
 // exclusive-OR-expression ^ AND-expression
-Parser_Result 
+MO_Parser_Result 
 parse_exclusive_or_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	res = parse_and_expression(lexer);
 
-	if (res.status == PARSER_STATUS_OK) {
+	if (res.status == MO_PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
 			if (op->type == '^') {
 				lexer_next(lexer);
-				Parser_Result right = parse_and_expression(lexer);
+				MO_Parser_Result right = parse_and_expression(lexer);
 
 				// Construct the node
 				Ast* node = allocate_node();
@@ -1371,17 +1399,17 @@ parse_exclusive_or_expression(Lexer* lexer) {
 // inclusive-OR-expression:
 // exclusive-OR-expression
 // inclusive-OR-expression | exclusive-OR-expression
-Parser_Result parse_inclusive_or_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+MO_Parser_Result parse_inclusive_or_expression(Lexer* lexer) {
+	MO_Parser_Result res = { 0 };
 
 	res = parse_exclusive_or_expression(lexer);
 
-	if (res.status == PARSER_STATUS_OK) {
+	if (res.status == MO_PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
 			if (op->type == '|') {
 				lexer_next(lexer);
-				Parser_Result right = parse_exclusive_or_expression(lexer);
+				MO_Parser_Result right = parse_exclusive_or_expression(lexer);
 
 				// Construct the node
 				Ast* node = allocate_node();
@@ -1402,18 +1430,18 @@ Parser_Result parse_inclusive_or_expression(Lexer* lexer) {
 // logical-AND-expression:
 // inclusive-OR-expression
 // logical-AND-expression && inclusive-OR-expression
-Parser_Result 
+MO_Parser_Result 
 parse_logical_and_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	res = parse_inclusive_or_expression(lexer);
 
-	if (res.status == PARSER_STATUS_OK) {
+	if (res.status == MO_PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
-			if (op->type == TOKEN_LOGIC_AND) {
+			if (op->type == MO_TOKEN_LOGIC_AND) {
 				lexer_next(lexer);
-				Parser_Result right = parse_inclusive_or_expression(lexer);
+				MO_Parser_Result right = parse_inclusive_or_expression(lexer);
 
 				// Construct the node
 				Ast* node = allocate_node();
@@ -1434,17 +1462,17 @@ parse_logical_and_expression(Lexer* lexer) {
 // logical-OR-expression:
 // logical-AND-expression
 // logical-OR-expression || logical-AND-expression
-Parser_Result parse_logical_or_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+MO_Parser_Result parse_logical_or_expression(Lexer* lexer) {
+	MO_Parser_Result res = { 0 };
 
 	res = parse_logical_and_expression(lexer);
 
-	if (res.status == PARSER_STATUS_OK) {
+	if (res.status == MO_PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
-			if (op->type == TOKEN_LOGIC_OR) {
+			if (op->type == MO_TOKEN_LOGIC_OR) {
 				lexer_next(lexer);
-				Parser_Result right = parse_logical_and_expression(lexer);
+				MO_Parser_Result right = parse_logical_and_expression(lexer);
 
 				// Construct the node
 				Ast* node = allocate_node();
@@ -1465,14 +1493,14 @@ Parser_Result parse_logical_or_expression(Lexer* lexer) {
 // conditional-expression:
 // logical-OR-expression
 // logical-OR-expression ? expression : conditional-expression
-Parser_Result 
+MO_Parser_Result 
 parse_conditional_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	res = parse_logical_or_expression(lexer);
 	Ast* condition = res.node;
 
-	if (res.status == PARSER_STATUS_FATAL)
+	if (res.status == MO_PARSER_STATUS_FATAL)
 		return res;
 
 	// ternary operator
@@ -1481,14 +1509,14 @@ parse_conditional_expression(Lexer* lexer) {
 		lexer_next(lexer);
 		res = parse_expression(lexer);
 		Ast* case_true = res.node;
-		if (res.status == PARSER_STATUS_FATAL)
+		if (res.status == MO_PARSER_STATUS_FATAL)
 			return res;
 		res = require_token(lexer, ':');
-		if (res.status == PARSER_STATUS_FATAL)
+		if (res.status == MO_PARSER_STATUS_FATAL)
 			return res;
 		res = parse_conditional_expression(lexer);
 		Ast* case_false = res.node;
-		if (res.status == PARSER_STATUS_FATAL)
+		if (res.status == MO_PARSER_STATUS_FATAL)
 			return res;
 
 		Ast* node = allocate_node();
@@ -1505,18 +1533,18 @@ parse_conditional_expression(Lexer* lexer) {
 // assignment-expression:
 // conditional-expression (unary-expression is a more specific conditional-expression)
 // unary-expression assignment-operator assignment-expression
-Parser_Result 
+MO_Parser_Result 
 parse_assignment_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	res = parse_conditional_expression(lexer);
 
-	if (res.status == PARSER_STATUS_OK) {
+	if (res.status == MO_PARSER_STATUS_OK) {
 		while(true) {
 			Token* op = lexer_peek(lexer);
 			if (is_assignment_operator(op)) {
 				lexer_next(lexer);
-				Parser_Result right = parse_conditional_expression(lexer);
+				MO_Parser_Result right = parse_conditional_expression(lexer);
 
 				// Construct the node
 				Ast* node = allocate_node();
@@ -1538,20 +1566,20 @@ parse_assignment_expression(Lexer* lexer) {
 // constant
 // string-literal
 // ( expression )
-Parser_Result 
+MO_Parser_Result 
 parse_primary_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	Token* next = lexer_peek(lexer);
 
 	switch (next->type) {
-		case TOKEN_IDENTIFIER: {
+		case MO_TOKEN_IDENTIFIER: {
 			lexer_next(lexer);
 			res.node = allocate_node();
 			res.node->kind = AST_EXPRESSION_PRIMARY_IDENTIFIER;
 			res.node->expression_primary.data = next;
 		}break;
-		case TOKEN_STRING_LITERAL: {
+		case MO_TOKEN_STRING_LITERAL: {
 			lexer_next(lexer);
 			res.node = allocate_node();
 			res.node->kind = AST_EXPRESSION_PRIMARY_STRING_LITERAL;
@@ -1560,10 +1588,10 @@ parse_primary_expression(Lexer* lexer) {
 		case '(': {
 			lexer_next(lexer);
 			res = parse_expression(lexer);
-			if (res.status == PARSER_STATUS_FATAL)
+			if (res.status == MO_PARSER_STATUS_FATAL)
 				return res;
-			Parser_Result endexpr = require_token(lexer, ')');
-			if(endexpr.status == PARSER_STATUS_FATAL) {
+			MO_Parser_Result endexpr = require_token(lexer, ')');
+			if(endexpr.status == MO_PARSER_STATUS_FATAL) {
 				return endexpr;
 			}
 		}break;
@@ -1578,25 +1606,25 @@ parse_primary_expression(Lexer* lexer) {
 // expression:
 // assignment-expression
 // expression , assignment-expression
-Parser_Result 
+MO_Parser_Result 
 parse_expression(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 
 	s32 start = lexer->index;
 	res = parse_assignment_expression(lexer);
 
-	// TODO(psv): maybe implement , operator
+	// TODO3(psv): maybe implement , operator
 
 	return res;
 }
 
-Parser_Result
+MO_Parser_Result
 parse_identifier(Lexer* lexer) {
-	Parser_Result res = { 0 };
+	MO_Parser_Result res = { 0 };
 	Token* t = lexer_next(lexer);
-	if (t->type != TOKEN_IDENTIFIER) {
+	if (t->type != MO_TOKEN_IDENTIFIER) {
 		// TODO(psv): write error here
-		res.status = PARSER_STATUS_FATAL;
+		res.status = MO_PARSER_STATUS_FATAL;
 		return res;
 	}
 
@@ -1612,43 +1640,43 @@ parse_identifier(Lexer* lexer) {
 // integer-constant
 // enumeration-constant (identifier)
 // character-constant
-Parser_Result
+MO_Parser_Result
 parse_constant(Lexer* lexer) {
-	Parser_Result result = { 0 };
+	MO_Parser_Result result = { 0 };
 
 	Ast* node = allocate_node();
 	result.node = node;
 
 	Token* n = lexer_next(lexer);
 	switch (n->type) {
-		case TOKEN_FLOAT_LITERAL: {
+		case MO_TOKEN_FLOAT_LITERAL: {
 			node->kind = AST_CONSTANT_FLOATING_POINT;
 			node->expression_primary.data = n;
 		} break;
-		case TOKEN_INT_HEX_LITERAL:
-		case TOKEN_INT_BIN_LITERAL:
-		case TOKEN_INT_OCT_LITERAL:
-		case TOKEN_INT_U_LITERAL:
-		case TOKEN_INT_UL_LITERAL:
-		case TOKEN_INT_ULL_LITERAL:
-		case TOKEN_INT_LITERAL:
-		case TOKEN_INT_L_LITERAL:
-		case TOKEN_INT_LL_LITERAL: {
+		case MO_TOKEN_INT_HEX_LITERAL:
+		case MO_TOKEN_INT_BIN_LITERAL:
+		case MO_TOKEN_INT_OCT_LITERAL:
+		case MO_TOKEN_INT_U_LITERAL:
+		case MO_TOKEN_INT_UL_LITERAL:
+		case MO_TOKEN_INT_ULL_LITERAL:
+		case MO_TOKEN_INT_LITERAL:
+		case MO_TOKEN_INT_L_LITERAL:
+		case MO_TOKEN_INT_LL_LITERAL: {
 			node->kind = AST_CONSTANT_INTEGER;
 			node->expression_primary.data = n;
 		} break;
-		case TOKEN_IDENTIFIER: {
+		case MO_TOKEN_IDENTIFIER: {
 			// enumeration-constant
 			node->kind = AST_CONSTANT_ENUMARATION;
 			node->expression_primary.data = n;
 		} break;
-		case TOKEN_CHAR_LITERAL: {
+		case MO_TOKEN_CHAR_LITERAL: {
 			// character-constant
 			node->kind = AST_CONSTANT_CHARACTER;
 			node->expression_primary.data = n;
 		}break;
 		default: {
-			result.status = PARSER_STATUS_FATAL;
+			result.status = MO_PARSER_STATUS_FATAL;
 			result.error_message = parser_error_message(lexer, "Syntax Error: expected constant, but got '%s'\n", token_to_str(n));
 			result.node = 0;
 			free_node(node);
@@ -2131,4 +2159,33 @@ parser_print_ast(FILE* out, Ast* ast) {
 			fflush(out);
 		}break;
 	}
+}
+
+void 
+mop_print_ast(struct Ast_t* ast) {
+	parser_print_ast(stdout, ast);
+}
+
+MO_Parser_Result
+mop_parse_expression(MO_Lexer* lexer) {
+	return parse_expression((Lexer*)lexer);
+}
+
+MO_Parser_Result
+mop_parse_expression_cstr(const char* str) {
+	Lexer lexer = {0};
+	MO_Token* tokens = mop_lexer_cstr(&lexer, (char*)str, strlen(str));
+	return mop_parse_expression(&lexer);
+}
+
+MO_Parser_Result
+mop_parse_typename(MO_Lexer* lexer) {
+	return parse_type_name((Lexer*)lexer);
+}
+
+MO_Parser_Result 
+mop_parse_typename_cstr(const char* str) {
+	Lexer lexer = {0};
+	MO_Token* tokens = mop_lexer_cstr(&lexer, (char*)str, strlen(str));
+	return mop_parse_typename(&lexer);
 }

@@ -1,6 +1,8 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
-#include "parser.h"
+//#include "parser.h"
+#include "common.h"
+#include "moparser.h"
 
 typedef struct {
     u8* data;
@@ -35,15 +37,16 @@ int main(int argc, char** argv) {
         finfo = load_file(argv[1]);
     }
 
-    Lexer lexer = {0};
-    Token* tokens = lexer_cstr(&lexer, finfo.data, finfo.size_bytes, 0);
-	Parser_Result res = parse_expression(&lexer);
+    MO_Lexer lexer = {0};
+    MO_Token* tokens = mop_lexer_cstr(&lexer, finfo.data, finfo.size_bytes);
+	MO_Parser_Result res = mop_parse_expression(&lexer);
 	//Parser_Result res = parse_type_name(&lexer);
 
-    if(res.status == PARSER_STATUS_FATAL) {
+    if(res.status == MO_PARSER_STATUS_FATAL) {
         fprintf(stderr, "%s", res.error_message);
     }
-	parser_print_ast(stdout, res.node);
+
+	mop_print_ast(res.node);
 
     return 0;
 }
