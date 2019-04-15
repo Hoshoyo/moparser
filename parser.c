@@ -3,11 +3,17 @@
 #include "light_array.h"
 #include <stdlib.h>
 #include <assert.h>
+#include <stdarg.h>
 #include "moparser.h"
 
 #include "lexer.c"
 
-static void parser_print_ast(FILE* out, MO_Ast* ast);
+typedef struct {
+    char* buffer;
+    int   index;
+} HBuffer;
+
+static void parser_print_ast(HBuffer* out, MO_Ast* ast);
 
 static MO_Parser_Result parse_type_name(Lexer* lexer);
 static MO_Parser_Result parse_postfix_expression(Lexer* lexer);
@@ -1706,32 +1712,69 @@ parse_constant(Lexer* lexer) {
 	return result;
 }
 
+HBuffer 
+hbuffer_new() {
+    HBuffer b = {0};
+    b.buffer = array_new(char);
+    b.index = 0;
+    return b;
+}
 
-#define fprintf(...) fprintf(__VA_ARGS__); fflush(stdout)
+static int 
+hprint(HBuffer* buffer, const char* fmt, ...) {
+    va_list args;
+	va_start(args, fmt);
 
-static void parser_print_abstract_declarator(FILE*, MO_Ast*);
-static void parser_print_specifiers_qualifiers(FILE* out, MO_Ast* sq);
+    int capacity = (int)array_capacity(buffer->buffer) - buffer->index;
+    int to_write = vsnprintf(buffer->buffer + buffer->index, capacity, fmt, args) + 1;
+    array_length(buffer->buffer) += capacity;
+
+	va_end(args);
+
+    if(to_write > capacity) {
+        va_list args2;
+        va_start(args2, fmt);
+
+        char* mem = calloc(1, to_write + 1);
+        int l = vsnprintf(mem, to_write + 1, fmt, args2);
+
+        int extra = array_capacity(buffer->buffer);
+        array_allocate(buffer->buffer, to_write - capacity + extra);
+        memcpy(buffer->buffer + buffer->index + capacity - 1, mem + capacity - 1, to_write - capacity + 1);
+
+        array_length(buffer->buffer) += (to_write - capacity);
+
+        free(mem);
+
+        va_end(args2);
+    }
+
+    buffer->index += to_write - 1;
+}
+
+static void parser_print_abstract_declarator(HBuffer*, MO_Ast*);
+static void parser_print_specifiers_qualifiers(HBuffer*, MO_Ast*);
 
 static void
-parser_print_token(FILE* out, Token* t) {
-	fprintf(out, "%.*s", t->length, t->data);
+parser_print_token(HBuffer* out, Token* t) {
+	hprint(out, "%.*s", t->length, t->data);
 }
 
 static void
-parser_print_type_qualifier_list(FILE* out, MO_Ast* q) {
+parser_print_type_qualifier_list(HBuffer* out, MO_Ast* q) {
 	if (!q) return;
 	assert(q->kind == MO_AST_TYPE_INFO);
 	if (q->specifier_qualifier.qualifiers & MO_TYPE_QUALIFIER_CONST) {
-		fprintf(out, "const ");
+		hprint(out, "const ");
 	}
 	if (q->specifier_qualifier.qualifiers & MO_TYPE_QUALIFIER_VOLATILE) {
-		fprintf(out, "volatile ");
+		hprint(out, "volatile ");
 	}
 }
 
 static void
-parser_print_pointer(FILE* out, MO_Ast* pointer) {
-	fprintf(out, "*");
+parser_print_pointer(HBuffer* out, MO_Ast* pointer) {
+	hprint(out, "*");
 	parser_print_type_qualifier_list(out, pointer->pointer.qualifiers);
 	if (pointer->pointer.next) {
 		parser_print_pointer(out, pointer->pointer.next);
@@ -1739,30 +1782,30 @@ parser_print_pointer(FILE* out, MO_Ast* pointer) {
 }
 
 static void
-parser_print_param_decl(FILE* out, MO_Ast* decl) {
+parser_print_param_decl(HBuffer* out, MO_Ast* decl) {
 	assert(decl->kind == MO_AST_PARAMETER_DECLARATION);
 	parser_print_specifiers_qualifiers(out, decl->parameter_decl.decl_specifiers);
 	parser_print_abstract_declarator(out, decl->parameter_decl.declarator);
 }
 
 static void
-parser_print_parameter_list(FILE* out, MO_Ast* p) {
+parser_print_parameter_list(HBuffer* out, MO_Ast* p) {
 	for (u64 i = 0; i < array_length(p->parameter_list.param_decl); ++i) {
-		if (i != 0) fprintf(out, ",");
+		if (i != 0) hprint(out, ",");
 		parser_print_param_decl(out, p->parameter_list.param_decl[i]);
 	}
 	if (p->parameter_list.is_vararg)
-		fprintf(out, ", ...");
+		hprint(out, ", ...");
 }
 
 static void
-parser_print_direct_abstract_declarator(FILE* out, MO_Ast* ast) {
+parser_print_direct_abstract_declarator(HBuffer* out, MO_Ast* ast) {
 	
 	if (ast->direct_abstract_decl.type == MO_DIRECT_ABSTRACT_DECL_NONE) {
-		fprintf(out, "(");
+		hprint(out, "(");
 		parser_print_abstract_declarator(out, ast->direct_abstract_decl.left_opt);
 		assert(ast->direct_abstract_decl.right_opt == 0);
-		fprintf(out, ")");
+		hprint(out, ")");
 		return;
 	} else if(ast->direct_abstract_decl.left_opt) {
 		parser_print_direct_abstract_declarator(out, ast->direct_abstract_decl.left_opt);
@@ -1770,28 +1813,28 @@ parser_print_direct_abstract_declarator(FILE* out, MO_Ast* ast) {
 
 	switch (ast->direct_abstract_decl.type) {
 		case MO_DIRECT_ABSTRACT_DECL_FUNCTION: {
-			fprintf(out, "(");
+			hprint(out, "(");
 			if (ast->direct_abstract_decl.right_opt) {
 				parser_print_parameter_list(out, ast->direct_abstract_decl.right_opt);
 			}
-			fprintf(out, ")");
+			hprint(out, ")");
 		} break;
 		case MO_DIRECT_ABSTRACT_DECL_ARRAY: {
-			fprintf(out, "[");
+			hprint(out, "[");
 			if (ast->direct_abstract_decl.right_opt) {
 				parser_print_ast(out, ast->direct_abstract_decl.right_opt);
 			}
-			fprintf(out, "]");
+			hprint(out, "]");
 		} break;
 		case MO_DIRECT_ABSTRACT_DECL_NAME: {
 			parser_print_token(out, ast->direct_abstract_decl.name);
 		} break;
-		default: fprintf(out, "<invalid direct abstract declarator>"); break;
+		default: hprint(out, "<invalid direct abstract declarator>"); break;
 	}
 }
 
 static void
-parser_print_abstract_declarator(FILE* out, MO_Ast* a) {
+parser_print_abstract_declarator(HBuffer* out, MO_Ast* a) {
 	if (a->abstract_type_decl.pointer) {
 		parser_print_pointer(out, a->abstract_type_decl.pointer);
 	}
@@ -1800,37 +1843,37 @@ parser_print_abstract_declarator(FILE* out, MO_Ast* a) {
 	}
 }
 
-static void parser_print_struct_declaration(FILE* out, MO_Ast* s);
+static void parser_print_struct_declaration(HBuffer* out, MO_Ast* s);
 
 static void
-parser_print_struct_declaration_list(FILE* out, MO_Ast* l) {
+parser_print_struct_declaration_list(HBuffer* out, MO_Ast* l) {
 	for(u64 i = 0; i < array_length(l->struct_declaration_list.list); ++i) {
-		if(i > 0) fprintf(out, "\n");
+		if(i > 0) hprint(out, "\n");
 		parser_print_struct_declaration(out, l->struct_declaration_list.list[i]);
 	}
 }
 
 static void
-parser_print_struct_declarator(FILE* out, MO_Ast* d) {
+parser_print_struct_declarator(HBuffer* out, MO_Ast* d) {
 	assert(d->kind == MO_AST_TYPE_STRUCT_DECLARATOR);
 	parser_print_abstract_declarator(out, d->struct_declarator.declarator);
 }
 
 static void
-parser_print_struct_declarator_bitfield(FILE* out, MO_Ast* d) {
+parser_print_struct_declarator_bitfield(HBuffer* out, MO_Ast* d) {
 	assert(d->kind == MO_AST_TYPE_STRUCT_DECLARATOR_BITFIELD);
 	if(d->struct_declarator_bitfield.declarator) {
 		parser_print_ast(out, d->struct_declarator_bitfield.declarator);
 	}
-	fprintf(out, " : ");
+	hprint(out, " : ");
 	parser_print_ast(out, d->struct_declarator_bitfield.const_expr);
 }
 
 static void
-parser_print_struct_declarator_list(FILE* out, MO_Ast* d) {
+parser_print_struct_declarator_list(HBuffer* out, MO_Ast* d) {
 	assert(d->kind == MO_AST_TYPE_STRUCT_DECLARATOR_LIST);
 	for(u64 i = 0; i < array_length(d->struct_declarator_list.list); ++i) {
-		if(i > 0) fprintf(out, ", ");
+		if(i > 0) hprint(out, ", ");
 		MO_Node_Kind kind = d->struct_declarator_list.list[i]->kind;
 		MO_Ast* node = d->struct_declarator_list.list[i];
 		if(kind == MO_AST_TYPE_STRUCT_DECLARATOR){
@@ -1842,112 +1885,112 @@ parser_print_struct_declarator_list(FILE* out, MO_Ast* d) {
 }
 
 static void
-parser_print_struct_declaration(FILE* out, MO_Ast* s) {
+parser_print_struct_declaration(HBuffer* out, MO_Ast* s) {
 	assert(s->kind == MO_AST_STRUCT_DECLARATION);
 	parser_print_specifiers_qualifiers(out, s->struct_declaration.spec_qual);
-	fprintf(out, " ");
+	hprint(out, " ");
 	parser_print_struct_declarator_list(out, s->struct_declaration.struct_decl_list);
-	fprintf(out, ";");
+	hprint(out, ";");
 }
 
 static void
-parser_print_enumerator(FILE* out, MO_Ast* e) {
+parser_print_enumerator(HBuffer* out, MO_Ast* e) {
 	assert(e->kind == MO_AST_ENUMERATOR);
 	parser_print_token(out, e->enumerator.enum_constant);
-	fprintf(out, " ");
+	hprint(out, " ");
 	if(e->enumerator.const_expr) {
-		fprintf(out, " = ");
+		hprint(out, " = ");
 		parser_print_ast(out, e->enumerator.const_expr);
 	}
 }
 
 static void
-parser_print_enumerator_list(FILE* out, MO_Ast* el) {
+parser_print_enumerator_list(HBuffer* out, MO_Ast* el) {
 	assert(el->kind == MO_AST_ENUMERATOR_LIST);
 	for(u64 i = 0; i < array_length(el->enumerator_list.list); ++i) {
-		if(i > 0) fprintf(out, ", ");
+		if(i > 0) hprint(out, ", ");
 		parser_print_enumerator(out, (MO_Ast*)el->enumerator_list.list[i]);
 	}
 }
 
 static void
-parser_print_struct_description(FILE* out, MO_Ast* sd) {
+parser_print_struct_description(HBuffer* out, MO_Ast* sd) {
 	assert(sd->kind == MO_AST_STRUCT_DECLARATION_LIST);
 	for(u64 i = 0; i < array_length(sd->struct_declaration_list.list); ++i) {
-		if(i > 0) fprintf(out, " ");
+		if(i > 0) hprint(out, " ");
 		parser_print_struct_declaration(out, sd->struct_declaration_list.list[i]);
 	}
 }
 
 static void
-parser_print_specifiers_qualifiers(FILE* out, MO_Ast* sq) {
+parser_print_specifiers_qualifiers(HBuffer* out, MO_Ast* sq) {
 	parser_print_type_qualifier_list(out, sq);
 	switch (sq->specifier_qualifier.kind) {
 		case MO_TYPE_VOID:
-			fprintf(out, "void");
+			hprint(out, "void");
 			break;
 		case MO_TYPE_PRIMITIVE:{
 			for (s32 i = 0; i < ARRAY_LENGTH(sq->specifier_qualifier.primitive); ++i) {
 				for (s32 c = 0; c < sq->specifier_qualifier.primitive[i]; ++c) {
-					if (c != 0) fprintf(out, " ");
+					if (c != 0) hprint(out, " ");
 					switch (i) {
-						case MO_TYPE_PRIMITIVE_CHAR:		fprintf(out, "char "); break;
-						case MO_TYPE_PRIMITIVE_DOUBLE:		fprintf(out, "double "); break;
-						case MO_TYPE_PRIMITIVE_FLOAT:		fprintf(out, "float "); break;
-						case MO_TYPE_PRIMITIVE_INT:		fprintf(out, "int "); break;
-						case MO_TYPE_PRIMITIVE_LONG:		fprintf(out, "long "); break;
-						case MO_TYPE_PRIMITIVE_SHORT:		fprintf(out, "short "); break;
-						case MO_TYPE_PRIMITIVE_SIGNED:		fprintf(out, "signed "); break;
-						case MO_TYPE_PRIMITIVE_UNSIGNED:	fprintf(out, "unsigned "); break;
-						default: fprintf(out, "<invalid primitive type>"); break;
+						case MO_TYPE_PRIMITIVE_CHAR:		hprint(out, "char "); break;
+						case MO_TYPE_PRIMITIVE_DOUBLE:		hprint(out, "double "); break;
+						case MO_TYPE_PRIMITIVE_FLOAT:		hprint(out, "float "); break;
+						case MO_TYPE_PRIMITIVE_INT:		hprint(out, "int "); break;
+						case MO_TYPE_PRIMITIVE_LONG:		hprint(out, "long "); break;
+						case MO_TYPE_PRIMITIVE_SHORT:		hprint(out, "short "); break;
+						case MO_TYPE_PRIMITIVE_SIGNED:		hprint(out, "signed "); break;
+						case MO_TYPE_PRIMITIVE_UNSIGNED:	hprint(out, "unsigned "); break;
+						default: hprint(out, "<invalid primitive type>"); break;
 					}
 				}
 			}
 		}break;
 		case MO_TYPE_STRUCT: {
-			fprintf(out, "struct ");
+			hprint(out, "struct ");
 			if(sq->specifier_qualifier.struct_name)
 				parser_print_token(out, sq->specifier_qualifier.struct_name);
 			if(sq->specifier_qualifier.struct_desc) {
-				fprintf(out, " { ");
+				hprint(out, " { ");
 				parser_print_struct_description(out, sq->specifier_qualifier.struct_desc);
-				fprintf(out, " } ");
+				hprint(out, " } ");
 			}
 		}break;
 		case MO_TYPE_UNION: {
-			fprintf(out, "union ");
+			hprint(out, "union ");
 			if(sq->specifier_qualifier.struct_name)
 				parser_print_token(out, sq->specifier_qualifier.struct_name);
 			if(sq->specifier_qualifier.enumerator_list) {
-				fprintf(out, " { ");
+				hprint(out, " { ");
 				parser_print_enumerator_list(out, sq->specifier_qualifier.enumerator_list);
-				fprintf(out, " } ");
+				hprint(out, " } ");
 			}
 		}break;
 		case MO_TYPE_ALIAS: {
 			parser_print_token(out, sq->specifier_qualifier.alias);
 		}break;
 		case MO_TYPE_ENUM: {
-			fprintf(out, "enum ");
+			hprint(out, "enum ");
 			if(sq->specifier_qualifier.enum_name)
 				parser_print_token(out, sq->specifier_qualifier.enum_name);
 
-			fprintf(out, "{");
+			hprint(out, "{");
 			parser_print_enumerator_list(out, sq->specifier_qualifier.enumerator_list);
-			fprintf(out, "}");
+			hprint(out, "}");
 		}break;
-		default: fprintf(out, "<invalid type specifier or qualifier>"); break;
+		default: hprint(out, "<invalid type specifier or qualifier>"); break;
 	}
 }
 
 static void
-parser_print_typename(FILE* out, MO_Ast* node) {
+parser_print_typename(HBuffer* out, MO_Ast* node) {
 	parser_print_specifiers_qualifiers(out, node->type_name.qualifiers_specifiers);
 	parser_print_abstract_declarator(out, node->type_name.abstract_declarator);
 }
 
 static void
-parser_print_ast(FILE* out, MO_Ast* ast) {
+parser_print_ast(HBuffer* out, MO_Ast* ast) {
 	if (!ast) return;
 
 	switch (ast->kind) {
@@ -1955,171 +1998,165 @@ parser_print_ast(FILE* out, MO_Ast* ast) {
 		case MO_AST_EXPRESSION_PRIMARY_CONSTANT:
 		case MO_AST_EXPRESSION_PRIMARY_STRING_LITERAL:
 		case MO_AST_EXPRESSION_PRIMARY_IDENTIFIER: {
-			fprintf(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
-			fflush(out);
+			hprint(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
 		}break;
 		case MO_AST_EXPRESSION_CONDITIONAL:
 			break;
 		case MO_AST_EXPRESSION_ASSIGNMENT: {
 			parser_print_ast(out, ast->expression_binary.left);
-			fprintf(out, " ");
+			hprint(out, " ");
 			switch (ast->expression_binary.bo) {
-				case MO_BINOP_EQUAL: fprintf(out, "="); break;
-				case MO_BINOP_AND_EQ: fprintf(out, "&="); break;
-				case MO_BINOP_OR_EQ: fprintf(out, "|="); break;
-				case MO_BINOP_MINUS_EQ: fprintf(out, "-="); break;
-				case MO_BINOP_PLUS_EQ: fprintf(out, "+="); break;
-				case MO_BINOP_MOD_EQ: fprintf(out, "%%="); break;
-				case MO_BINOP_TIMES_EQ: fprintf(out, "*="); break;
-				case MO_BINOP_DIV_EQ: fprintf(out, "/="); break;
-				case MO_BINOP_XOR_EQ: fprintf(out, "^="); break;
-				case MO_BINOP_SHL_EQ: fprintf(out, "<<="); break;
-				case MO_BINOP_SHR_EQ: fprintf(out, ">>="); break;
-				default: fprintf(out, "<invalid assignment op>"); break;
+				case MO_BINOP_EQUAL: hprint(out, "="); break;
+				case MO_BINOP_AND_EQ: hprint(out, "&="); break;
+				case MO_BINOP_OR_EQ: hprint(out, "|="); break;
+				case MO_BINOP_MINUS_EQ: hprint(out, "-="); break;
+				case MO_BINOP_PLUS_EQ: hprint(out, "+="); break;
+				case MO_BINOP_MOD_EQ: hprint(out, "%%="); break;
+				case MO_BINOP_TIMES_EQ: hprint(out, "*="); break;
+				case MO_BINOP_DIV_EQ: hprint(out, "/="); break;
+				case MO_BINOP_XOR_EQ: hprint(out, "^="); break;
+				case MO_BINOP_SHL_EQ: hprint(out, "<<="); break;
+				case MO_BINOP_SHR_EQ: hprint(out, ">>="); break;
+				default: hprint(out, "<invalid assignment op>"); break;
 			}
-			fprintf(out, " ");
+			hprint(out, " ");
 			parser_print_ast(out, ast->expression_binary.right);
 		} break;
 		case MO_AST_EXPRESSION_ARGUMENT_LIST: {
 			parser_print_ast(out, ast->expression_argument_list.expr);
-			fprintf(out, ", ");
+			hprint(out, ", ");
 			parser_print_ast(out, ast->expression_argument_list.next);
 		} break;
 		case MO_AST_EXPRESSION_UNARY:{
 			switch (ast->expression_unary.uo) {
-				case MO_UNOP_ADDRESS_OF: fprintf(out, "&"); break;
-				case MO_UNOP_DEREFERENCE: fprintf(out, "*"); break;
-				case MO_UNOP_MINUS: fprintf(out, "-"); break;
-				case MO_UNOP_PLUS: fprintf(out, "+"); break;
-				case MO_UNOP_MINUS_MINUS: fprintf(out, "--"); break;
-				case MO_UNOP_PLUS_PLUS: fprintf(out, "++"); break;
-				case MO_UNOP_NOT_BITWISE: fprintf(out, "~"); break;
-				case MO_UNOP_NOT_LOGICAL: fprintf(out, "!"); break;
-				default: fprintf(out, "<unknown expression unary>"); break;
+				case MO_UNOP_ADDRESS_OF: hprint(out, "&"); break;
+				case MO_UNOP_DEREFERENCE: hprint(out, "*"); break;
+				case MO_UNOP_MINUS: hprint(out, "-"); break;
+				case MO_UNOP_PLUS: hprint(out, "+"); break;
+				case MO_UNOP_MINUS_MINUS: hprint(out, "--"); break;
+				case MO_UNOP_PLUS_PLUS: hprint(out, "++"); break;
+				case MO_UNOP_NOT_BITWISE: hprint(out, "~"); break;
+				case MO_UNOP_NOT_LOGICAL: hprint(out, "!"); break;
+				default: hprint(out, "<unknown expression unary>"); break;
 			}
 			parser_print_ast(out, ast->expression_unary.expr);
 		}break;
 		case MO_AST_EXPRESSION_CAST:
-			fprintf(out, "(");
+			hprint(out, "(");
 			parser_print_typename(out, ast->expression_cast.type_name);
-			fprintf(out, ")");
+			hprint(out, ")");
 			parser_print_ast(out, ast->expression_cast.expression);
 			break;
 		case MO_AST_EXPRESSION_ADDITIVE: 
 		case MO_AST_EXPRESSION_MULTIPLICATIVE: {
-			fprintf(out, "(");
-			fflush(out);
+			hprint(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
-			fflush(out);
-			fprintf(out, " %c ", ast->expression_binary.bo);
-			fflush(out);
+			hprint(out, " %c ", ast->expression_binary.bo);
 			parser_print_ast(out, ast->expression_binary.right);
-			fflush(out);
-			fprintf(out, ")");
-			fflush(out);
+			hprint(out, ")");
 		}break;
 		case MO_AST_EXPRESSION_SHIFT:
-			fprintf(out, "(");
+			hprint(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
-			fprintf(out, " ");
+			hprint(out, " ");
 				switch (ast->expression_binary.bo) {
-				case MO_BINOP_SHL: fprintf(out, "<<"); break;
-				case MO_BINOP_SHR: fprintf(out, ">>"); break;
-				default: fprintf(out, "<invalid shift operator>"); break;
+				case MO_BINOP_SHL: hprint(out, "<<"); break;
+				case MO_BINOP_SHR: hprint(out, ">>"); break;
+				default: hprint(out, "<invalid shift operator>"); break;
 			}
-			fprintf(out, " ");
+			hprint(out, " ");
 			parser_print_ast(out, ast->expression_binary.right);
-			fprintf(out, ")");
+			hprint(out, ")");
 			break;
 		case MO_AST_EXPRESSION_RELATIONAL:
-			fprintf(out, "(");
+			hprint(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
-			fprintf(out, " ");
+			hprint(out, " ");
 			switch (ast->expression_binary.bo) {
-				case '<': fprintf(out, "<"); break;
-				case '>': fprintf(out, ">"); break;
-				case MO_BINOP_LE: fprintf(out, "<="); break;
-				case MO_BINOP_GE: fprintf(out, ">="); break;
-				default: fprintf(out, "<invalid relational operator>"); break;
+				case '<': hprint(out, "<"); break;
+				case '>': hprint(out, ">"); break;
+				case MO_BINOP_LE: hprint(out, "<="); break;
+				case MO_BINOP_GE: hprint(out, ">="); break;
+				default: hprint(out, "<invalid relational operator>"); break;
 			}
-			fprintf(out, " ");
+			hprint(out, " ");
 			parser_print_ast(out, ast->expression_binary.right);
-			fprintf(out, ")");
+			hprint(out, ")");
 			break;
 		case MO_AST_EXPRESSION_EQUALITY:
-			fprintf(out, "(");
+			hprint(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
 			switch (ast->expression_binary.bo) {
-				case MO_BINOP_EQUAL_EQUAL: fprintf(out, " == "); break;
-				case MO_BINOP_NOT_EQUAL: fprintf(out, " != "); break;
-				default: fprintf(out, "<invalid equality operator>"); break;
+				case MO_BINOP_EQUAL_EQUAL: hprint(out, " == "); break;
+				case MO_BINOP_NOT_EQUAL: hprint(out, " != "); break;
+				default: hprint(out, "<invalid equality operator>"); break;
 			}
 			parser_print_ast(out, ast->expression_binary.right);
-			fprintf(out, ")");
+			hprint(out, ")");
 			break;
 		case MO_AST_EXPRESSION_AND: {
-			fprintf(out, "(");
+			hprint(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
-			fprintf(out, " & ");
+			hprint(out, " & ");
 			parser_print_ast(out, ast->expression_binary.right);
-			fprintf(out, ")");
+			hprint(out, ")");
 		} break;
 		case MO_AST_EXPRESSION_EXCLUSIVE_OR: {
-			fprintf(out, "(");
+			hprint(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
-			fprintf(out, " ^ ");
+			hprint(out, " ^ ");
 			parser_print_ast(out, ast->expression_binary.right);
-			fprintf(out, ")");
+			hprint(out, ")");
 		}break;
 		case MO_AST_EXPRESSION_INCLUSIVE_OR: {
-			fprintf(out, "(");
+			hprint(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
-			fprintf(out, " | ");
+			hprint(out, " | ");
 			parser_print_ast(out, ast->expression_binary.right);
-			fprintf(out, ")");
+			hprint(out, ")");
 		}break;
 		case MO_AST_EXPRESSION_LOGICAL_AND: {
-			fprintf(out, "(");
+			hprint(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
-			fprintf(out, " && ");
+			hprint(out, " && ");
 			parser_print_ast(out, ast->expression_binary.right);
-			fprintf(out, ")");
+			hprint(out, ")");
 		} break;
 		case MO_AST_EXPRESSION_LOGICAL_OR: {
-			fprintf(out, "(");
+			hprint(out, "(");
 			parser_print_ast(out, ast->expression_binary.left);
-			fprintf(out, " || ");
+			hprint(out, " || ");
 			parser_print_ast(out, ast->expression_binary.right);
-			fprintf(out, ")");
+			hprint(out, ")");
 		}break;
 		case MO_AST_EXPRESSION_SIZEOF: {
-			fprintf(out, "sizeof (");
+			hprint(out, "sizeof (");
 			if(ast->expression_sizeof.is_type_name) {
 				parser_print_typename(out, ast->expression_sizeof.type);
 			} else {
 				parser_print_ast(out, ast->expression_sizeof.expr);
 			}
-			fprintf(out, ")");
+			hprint(out, ")");
 		}break;
 
 		case MO_AST_EXPRESSION_POSTFIX_UNARY: {
 			if (ast->expression_postfix_unary.expr) {
 				parser_print_ast(out, ast->expression_postfix_unary.expr);
 				switch (ast->expression_postfix_unary.po) {
-					case MO_POSTFIX_MINUS_MINUS: fprintf(out, "--"); break;
-					case MO_POSTFIX_PLUS_PLUS: fprintf(out, "++"); break;
-					default: fprintf(out, "<unknown postfix unary>"); break;
+					case MO_POSTFIX_MINUS_MINUS: hprint(out, "--"); break;
+					case MO_POSTFIX_PLUS_PLUS: hprint(out, "++"); break;
+					default: hprint(out, "<unknown postfix unary>"); break;
 				}
 			}
 		}break;
 		case MO_AST_EXPRESSION_POSTFIX_BINARY: {
 			parser_print_ast(out, ast->expression_postfix_binary.left);
 			switch (ast->expression_postfix_binary.po) {
-				case MO_POSTFIX_ARROW: fprintf(out, "->"); break;
-				case MO_POSTFIX_DOT: fprintf(out, "."); break;
-				case MO_POSTFIX_ARRAY_ACCESS: fprintf(out, "["); break;
-				case MO_POSTFIX_PROC_CALL: fprintf(out, "("); break;
-				default: fprintf(out, "<unknown postfix binary>"); break;
+				case MO_POSTFIX_ARROW: hprint(out, "->"); break;
+				case MO_POSTFIX_DOT: hprint(out, "."); break;
+				case MO_POSTFIX_ARRAY_ACCESS: hprint(out, "["); break;
+				case MO_POSTFIX_PROC_CALL: hprint(out, "("); break;
+				default: hprint(out, "<unknown postfix binary>"); break;
 			}
 			if (ast->expression_postfix_binary.right) {
 				parser_print_ast(out, ast->expression_postfix_binary.right);
@@ -2127,34 +2164,30 @@ parser_print_ast(FILE* out, MO_Ast* ast) {
 			switch (ast->expression_postfix_binary.po) {
 				case MO_POSTFIX_ARROW: break;
 				case MO_POSTFIX_DOT: break;
-				case MO_POSTFIX_ARRAY_ACCESS: fprintf(out, "]"); break;
-				case MO_POSTFIX_PROC_CALL: fprintf(out, ")"); break;
-				default: fprintf(out, "<unknown postfix binary>"); break;
+				case MO_POSTFIX_ARRAY_ACCESS: hprint(out, "]"); break;
+				case MO_POSTFIX_PROC_CALL: hprint(out, ")"); break;
+				default: hprint(out, "<unknown postfix binary>"); break;
 			}
 		}break;
 		case MO_AST_EXPRESSION_TERNARY: {
-			fprintf(out, "(");
+			hprint(out, "(");
 			parser_print_ast(out, ast->expression_ternary.condition);
-			fprintf(out, ") ? (");
+			hprint(out, ") ? (");
 			parser_print_ast(out, ast->expression_ternary.case_true);
-			fprintf(out, ") : (");
+			hprint(out, ") : (");
 			parser_print_ast(out, ast->expression_ternary.case_false);
-			fprintf(out, ")");
-			fflush(out);
+			hprint(out, ")");
 		}break;
 
 		case MO_AST_CONSTANT_FLOATING_POINT:
 		case MO_AST_CONSTANT_INTEGER: {
-			fprintf(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
-			fflush(out);
+			hprint(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
 		}break;
 		case MO_AST_CONSTANT_ENUMARATION: {
-			fprintf(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
-			fflush(out);
+			hprint(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
 		}break;
 		case MO_AST_CONSTANT_CHARACTER:
-			fprintf(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
-			fflush(out);
+			hprint(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
 			break;
 		case MO_AST_TYPE_NAME:
 			parser_print_typename(out, ast);
@@ -2175,15 +2208,16 @@ parser_print_ast(FILE* out, MO_Ast* ast) {
 			break;
 
 		default: {
-			printf("<unknown ast node>");
-			fflush(out);
+			hprint(out, "<unknown ast node>");
 		}break;
 	}
 }
 
 void 
 mop_print_ast(struct MO_Ast_t* ast) {
-	parser_print_ast(stdout, ast);
+	HBuffer buffer = hbuffer_new();
+	parser_print_ast(&buffer, ast);
+	fprintf(stdout, "%s", buffer.buffer);
 }
 
 MO_Parser_Result
