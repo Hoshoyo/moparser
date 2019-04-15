@@ -51,6 +51,22 @@ static char parser_error_buffer[1024];
 static bool
 is_type_name(Token* t) {
 	// TODO(psv): implement
+	switch(t->type) {
+		case MO_TOKEN_KEYWORD_INT:
+		case MO_TOKEN_KEYWORD_VOID:
+		case MO_TOKEN_KEYWORD_CHAR:
+		case MO_TOKEN_KEYWORD_SHORT:
+		case MO_TOKEN_KEYWORD_LONG:
+		case MO_TOKEN_KEYWORD_FLOAT:
+		case MO_TOKEN_KEYWORD_DOUBLE:
+		case MO_TOKEN_KEYWORD_SIGNED:
+		case MO_TOKEN_KEYWORD_UNSIGNED:
+		case MO_TOKEN_KEYWORD_STRUCT:
+		case MO_TOKEN_KEYWORD_UNION:
+		case MO_TOKEN_KEYWORD_ENUM:
+			return true;
+		default: return false;
+	}
 	return false;
 }
 

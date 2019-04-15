@@ -43,7 +43,8 @@ int main(int argc, char** argv) {
 	//Parser_Result res = parse_type_name(&lexer);
 
     if(res.status == MO_PARSER_STATUS_FATAL) {
-        fprintf(stderr, "%s", res.error_message);
+        fprintf(stderr, "Error parsing");
+        //fprintf(stderr, "%s", res.error_message);
     }
 
 	mop_print_ast(res.node);
