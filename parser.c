@@ -50,7 +50,8 @@ static char parser_error_buffer[1024];
 
 static bool
 is_type_name(Token* t) {
-	// TODO(psv): implement
+	// TODO(psv): We only handle this for typenames that are always types.
+	// Typedefs are still unhandled and will return false.
 	switch(t->type) {
 		case MO_TOKEN_KEYWORD_INT:
 		case MO_TOKEN_KEYWORD_VOID:
@@ -2152,7 +2153,7 @@ parser_print_ast(FILE* out, MO_Ast* ast) {
 			fflush(out);
 		}break;
 		case MO_AST_CONSTANT_CHARACTER:
-			fprintf(out, "'%.*s'", ast->expression_primary.data->length, ast->expression_primary.data->data);
+			fprintf(out, "%.*s", ast->expression_primary.data->length, ast->expression_primary.data->data);
 			fflush(out);
 			break;
 		case MO_AST_TYPE_NAME:

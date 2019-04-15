@@ -20,7 +20,8 @@
 
 
 // Expressions
-sizeof(struct{int f; char p;})
+my_array[my_array[3] + 2] = '\n' + 3 + ((int)2.3f + 7) + f((int)3.1f)
+//sizeof(struct{int f; char p;})
 //(int*)b + c
 //a + ()b
 //a > b ? 1 : 2

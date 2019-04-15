@@ -367,7 +367,6 @@ token_next(Lexer* lexer) {
 			// TODO(psv): Implement Long suffix  L' c-char-sequence '
             r.type = MO_TOKEN_CHAR_LITERAL;
             at++;
-			r.data++;
             if (*at == '\'') {
                 at++;
                 // TODO(psv): empty character constant error
@@ -408,6 +407,11 @@ token_next(Lexer* lexer) {
                     //printf("expected end of character literal");
                 }
                 ++at;
+            } else {
+                ++at;
+            }
+            if(*at != '\'') {
+                // TODO(psv): error invalid character literal
             } else {
                 ++at;
             }
